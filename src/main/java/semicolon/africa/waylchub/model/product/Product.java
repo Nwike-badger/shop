@@ -3,10 +3,11 @@ package semicolon.africa.waylchub.model.product;
 import lombok.*;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map; // Not directly used in Product, but good to have if ProductVariant is here
 
 @Document(collection = "products")
 @Data
@@ -14,33 +15,16 @@ import java.util.List;
 @NoArgsConstructor
 @Builder
 public class Product {
-
     @Id
     private String id;
-
     private String name;
-
     private String description;
-
-    private BigDecimal price;
-
-    private List<String> imageUrls;
-
     private String category;
-
     private String subCategory;
-
-    private int quantityAvailable;
-
-    private int quantitySold;
-
-    private boolean isBestSeller;
-
-    private boolean isNewArrival;
-
+    private List<String> tags;
+    private String brand;
     private LocalDateTime createdAt;
 
-    private String brand;
-
-    private double rating;
+    @Field("variants")
+    private List<ProductVariant> variants;
 }

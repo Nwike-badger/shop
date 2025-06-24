@@ -5,23 +5,23 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.math.BigDecimal;
+import java.math.BigDecimal; // Not directly used here
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map; // Not directly used here
 
 @Data
-@AllArgsConstructor
 @NoArgsConstructor
+@AllArgsConstructor
 @Builder
 public class ProductResponseDto {
     private String id;
     private String name;
-    private BigDecimal price;
     private String description;
-    private List<String> imageUrls;
-    private int quantityAvailable;
     private String category;
     private String subCategory;
-    private int quantitySold;
+    private List<String> tags;
     private String brand;
+    private List<ProductVariantResponseDto> variants;
+    private LocalDateTime createdAt;
 }

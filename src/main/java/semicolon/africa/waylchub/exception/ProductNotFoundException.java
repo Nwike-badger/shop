@@ -3,9 +3,9 @@ package semicolon.africa.waylchub.exception;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ResponseStatus;
 
-@ResponseStatus(HttpStatus.BAD_REQUEST) // 400 Bad Request
-public class InsufficientStockException extends RuntimeException {
-    public InsufficientStockException(String message) {
+@ResponseStatus(HttpStatus.NOT_FOUND)
+public class ProductNotFoundException extends RuntimeException {
+    public ProductNotFoundException(String message) {
         super(message);
     }
 }
