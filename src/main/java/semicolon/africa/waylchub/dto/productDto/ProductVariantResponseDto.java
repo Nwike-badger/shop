@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 
 @Data
@@ -14,5 +15,12 @@ public class ProductVariantResponseDto {
     private Map<String, String> attributes;
     private BigDecimal price;
     private int quantity;
-    private String imageUrl; // Added: For variant-specific images
+    private BigDecimal oldPrice;
+    private List<String> imageUrls;
+    private String discountPercentage;
+    private String discountColorCode;
+
+    public String getState() {
+        return this.quantity > 0 ? "In Stock" : "Out of Stock";
+    }
 }

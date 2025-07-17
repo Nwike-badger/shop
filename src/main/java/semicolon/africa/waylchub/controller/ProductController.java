@@ -3,10 +3,12 @@ package semicolon.africa.waylchub.controller;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import semicolon.africa.waylchub.dto.productDto.CreateProductRequest;
 import semicolon.africa.waylchub.dto.productDto.ProductResponseDto;
 import semicolon.africa.waylchub.dto.productDto.ProductVariantRequest;
+import semicolon.africa.waylchub.repository.productRepository.ProductRepository;
 import semicolon.africa.waylchub.service.productService.ProductService;
 
 import java.util.List;
@@ -17,9 +19,12 @@ import java.util.List;
 public class ProductController {
 
     private final ProductService productService;
+    private final ProductRepository productRepository;
 
-    @PostMapping
+    @PostMapping("/create-product")
+    @PreAuthorize("hasRole('ROLE_USER')")
     public ResponseEntity<ProductResponseDto> createProduct(@Valid @RequestBody CreateProductRequest request) {
+        productRepository.deleteAll();
         return ResponseEntity.ok(productService.createProduct(request));
     }
 
@@ -27,6 +32,7 @@ public class ProductController {
     public ResponseEntity<ProductResponseDto> getProductById(@PathVariable String id) {
         return ResponseEntity.ok(productService.getProductById(id));
     }
+
 
     @GetMapping("/sku/{sku}")
     public ResponseEntity<ProductResponseDto> getProductBySku(@PathVariable String sku) {
@@ -62,37 +68,4 @@ public class ProductController {
         return ResponseEntity.ok(productService.getBySubCategory(subCategory));
     }
 
-    @PatchMapping("/variant/{sku}/quantity")
-    public ResponseEntity<ProductResponseDto> updateProductVariantQuantity(
-            @PathVariable String sku,
-            @RequestParam int quantityChange
-    ) {
-        return ResponseEntity.ok(productService.updateProductVariantQuantity(sku, quantityChange));
-    }
-
-    @PostMapping("/{productId}/variant")
-    public ResponseEntity<ProductResponseDto> addVariantToProduct(
-            @PathVariable String productId,
-            @Valid @RequestBody ProductVariantRequest variantRequest
-    ) {
-        return ResponseEntity.ok(productService.addVariantToProduct(productId, variantRequest));
-    }
-
-    @PutMapping("/{productId}/variant/{sku}")
-    public ResponseEntity<ProductResponseDto> updateProductVariant(
-            @PathVariable String productId,
-            @PathVariable String sku,
-            @Valid @RequestBody ProductVariantRequest variantRequest
-    ) {
-        return ResponseEntity.ok(productService.updateProductVariant(productId, sku, variantRequest));
-    }
-
-    @DeleteMapping("/{productId}/variant/{sku}")
-    public ResponseEntity<Void> deleteProductVariant(
-            @PathVariable String productId,
-            @PathVariable String sku
-    ) {
-        productService.deleteProductVariant(productId, sku);
-        return ResponseEntity.noContent().build();
-    }
 }

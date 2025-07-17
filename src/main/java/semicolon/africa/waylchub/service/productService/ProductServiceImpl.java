@@ -1,6 +1,7 @@
 package semicolon.africa.waylchub.service.productService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import semicolon.africa.waylchub.dto.productDto.*;
 import semicolon.africa.waylchub.exception.InsufficientStockException;
@@ -10,55 +11,55 @@ import semicolon.africa.waylchub.repository.productRepository.ProductRepository;
 import semicolon.africa.waylchub.exception.ProductNotFoundException;
 import semicolon.africa.waylchub.exception.SkuAlreadyExistsException;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ProductServiceImpl implements ProductService {
     private final ProductRepository productRepository;
 
     @Override
     public ProductResponseDto createProduct(CreateProductRequest request) {
-        Optional<Product> existing = productRepository.findByNameAndCategory(request.getName(), request.getCategory());
-        Product product;
+        log.info("Creating new product with SKU: {}", request.getSku());
 
+
+        Optional<Product> existing = productRepository.findBySku(request.getSku());
         if (existing.isPresent()) {
-            product = existing.get();
-        } else {
-            product = Product.builder()
-                    .name(request.getName())
-                    .description(request.getDescription())
-                    .category(request.getCategory())
-                    .subCategory(request.getSubCategory())
-                    .tags(request.getTags())
-                    .brand(request.getBrand()) // Map brand for new product
-                    .createdAt(LocalDateTime.now())
-                    .variants(new ArrayList<>())
-                    .build();
+            throw new SkuAlreadyExistsException("SKU '" + request.getSku() + "' already exists.");
         }
 
-        // Use a temporary map to quickly check for duplicate SKUs within the current request
-        Set<String> requestSkus = new HashSet<>();
-        for (ProductVariantRequest variantRequest : request.getVariants()) {
-            if (!requestSkus.add(variantRequest.getSku())) {
-                throw new SkuAlreadyExistsException("Duplicate SKU '" + variantRequest.getSku() + "' found in the request payload.");
-            }
+        LocalDateTime now = LocalDateTime.now();
 
-            Optional<Product> existingSkuProduct = productRepository.findByVariants_Sku(variantRequest.getSku());
+        Product product = Product.builder()
+                .name(request.getName())
+                .description(request.getDescription())
+                .category(request.getCategory())
+                .subCategory(request.getSubCategory())
+                .tags(request.getTags())
+                .brand(request.getBrand())
 
-            if (existingSkuProduct.isPresent() && !existingSkuProduct.get().getId().equals(product.getId())) {
-                throw new SkuAlreadyExistsException("SKU '" + variantRequest.getSku() + "' already exists for another product (ID: " + existingSkuProduct.get().getId() + ").");
-            }
+                .sku(request.getSku())
+                .attributes(request.getAttributes())
+                .price(request.getPrice())
+                .oldPrice(request.getOldPrice())
+                .quantity(request.getQuantity())
+                .imageUrls(request.getImageUrls())
+                .discountPercentage(request.getDiscountPercentage())
+                .discountColorCode(request.getDiscountColorCode())
 
-            // Remove existing variant by SKU to prepare for adding the updated one
-            // This is a "replace or add" strategy for variants in the create/update flow
-            product.getVariants().removeIf(v -> v.getSku().equals(variantRequest.getSku()));
-            product.getVariants().add(ProductMapper.toProductVariant(variantRequest));
-        }
+                .totalReviews(request.getTotalReviews())
+                .averageRating(request.getAverageRating())
 
-        return ProductMapper.toProductResponseDto(productRepository.save(product));
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        Product saved = productRepository.save(product);
+        return ProductMapper.toProductResponseDto(saved);
     }
 
     @Override
@@ -70,7 +71,7 @@ public class ProductServiceImpl implements ProductService {
     @Override
     public ProductResponseDto getProductBySku(String sku) {
         return ProductMapper.toProductResponseDto(
-                productRepository.findByVariants_Sku(sku).orElseThrow(() -> new ProductNotFoundException("Product variant with SKU '" + sku + "' not found.")));
+                productRepository.findBySku(sku).orElseThrow(() -> new ProductNotFoundException("Product variant with SKU '" + sku + "' not found.")));
     }
 
     @Override
@@ -82,36 +83,44 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public ProductResponseDto updateProduct(String id, CreateProductRequest request) {
-        Product product = productRepository.findById(id).orElseThrow(() -> new ProductNotFoundException("Product not found with ID: " + id));
+        log.info("Updating product with ID: {}", id);
 
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ProductNotFoundException("Product not found with ID: " + id));
+
+
+        Optional<Product> skuConflict = productRepository.findBySku(request.getSku());
+        if (skuConflict.isPresent() && !skuConflict.get().getId().equals(id)) {
+            throw new SkuAlreadyExistsException("SKU '" + request.getSku() + "' already exists in another product.");
+        }
+
+        // Update fields
         product.setName(request.getName());
         product.setDescription(request.getDescription());
         product.setCategory(request.getCategory());
         product.setSubCategory(request.getSubCategory());
         product.setTags(request.getTags());
-        product.setBrand(request.getBrand()); // Update brand
+        product.setBrand(request.getBrand());
 
-        // This update method for the whole product replaces or adds variants
-        // based on the incoming request's variant list.
-        // BE CAREFUL: If the request omits a variant, it will be removed from the product.
-        // If you only intend to update specific variants, use dedicated variant update methods.
-        List<ProductVariant> updatedVariants = new ArrayList<>();
-        Set<String> requestSkus = new HashSet<>(); // For uniqueness check within the request
-        for (ProductVariantRequest variantRequest : request.getVariants()) {
-            if (!requestSkus.add(variantRequest.getSku())) {
-                throw new SkuAlreadyExistsException("Duplicate SKU '" + variantRequest.getSku() + "' found in the request payload for update.");
-            }
+        product.setSku(request.getSku());
+        product.setAttributes(request.getAttributes());
+        product.setPrice(request.getPrice());
+        product.setOldPrice(request.getOldPrice());
+        product.setQuantity(request.getQuantity());
+        product.setImageUrls(request.getImageUrls());
+        product.setDiscountPercentage(request.getDiscountPercentage());
+        product.setDiscountColorCode(request.getDiscountColorCode());
 
-            Optional<Product> existingSkuProduct = productRepository.findByVariants_Sku(variantRequest.getSku());
-            if (existingSkuProduct.isPresent() && !existingSkuProduct.get().getId().equals(id)) {
-                throw new SkuAlreadyExistsException("SKU '" + variantRequest.getSku() + "' already exists for another product (ID: " + existingSkuProduct.get().getId() + ").");
-            }
-            updatedVariants.add(ProductMapper.toProductVariant(variantRequest));
-        }
-        product.setVariants(updatedVariants);
+        product.setTotalReviews(request.getTotalReviews());
+        product.setAverageRating(request.getAverageRating());
 
-        return ProductMapper.toProductResponseDto(productRepository.save(product));
+        product.setUpdatedAt(LocalDateTime.now());
+
+        Product saved = productRepository.save(product);
+        return ProductMapper.toProductResponseDto(saved);
     }
+
+
 
     @Override
     public void deleteProduct(String id) {
@@ -135,92 +144,46 @@ public class ProductServiceImpl implements ProductService {
                 .collect(Collectors.toList());
     }
 
-    @Override
-    public ProductResponseDto updateProductVariantQuantity(String sku, int quantityChange) {
-        Product product = productRepository.findByVariants_Sku(sku).orElseThrow(() -> new ProductNotFoundException("Product variant with SKU '" + sku + "' not found."));
 
-        Optional<ProductVariant> variantToUpdateOptional = product.getVariants().stream()
-                .filter(v -> v.getSku().equals(sku))
-                .findFirst();
 
-        if (variantToUpdateOptional.isEmpty()) {
-            // This case should ideally not be reached if findByVariants_Sku worked correctly,
-            // but it's good for defensive programming.
-            throw new ProductNotFoundException("Variant with SKU '" + sku + "' not found within product ID: " + product.getId());
-        }
 
-        ProductVariant variantToUpdate = variantToUpdateOptional.get();
-        int updatedQty = variantToUpdate.getQuantity() + quantityChange;
-        if (updatedQty < 0) {
-            throw new InsufficientStockException("Insufficient stock for SKU: " + sku + ". Cannot reduce quantity below zero.");
-        }
-        variantToUpdate.setQuantity(updatedQty);
 
-        return ProductMapper.toProductResponseDto(productRepository.save(product));
-    }
+
+
+
+
 
     @Override
-    public ProductResponseDto addVariantToProduct(String productId, ProductVariantRequest variantRequest) {
-        Product product = productRepository.findById(productId).orElseThrow(() -> new ProductNotFoundException("Product not found with ID: " + productId));
+    public List<ProductResponseDto> searchProducts(SearchProductRequest request) {
+        List<Product> products = productRepository.findAll();
 
-        // Check for SKU uniqueness across all products (important!)
-        if (productRepository.findByVariants_Sku(variantRequest.getSku()).isPresent()) {
-            throw new SkuAlreadyExistsException("SKU '" + variantRequest.getSku() + "' already exists for another product or variant.");
-        }
+        return products.stream()
+                .filter(product -> {
+                    // Filter by brand
+                    if (request.getBrand() != null && !request.getBrand().equalsIgnoreCase(product.getBrand())) {
+                        return false;
+                    }
 
-        // Check for SKU uniqueness within the target product (if the product already has variants)
-        if (product.getVariants().stream().anyMatch(v -> v.getSku().equals(variantRequest.getSku()))) {
-            // This is an edge case if the global check passed but local didn't, implies data inconsistency
-            throw new SkuAlreadyExistsException("SKU '" + variantRequest.getSku() + "' already exists within product ID: " + productId);
-        }
+                    // Filter by tag
+                    if (request.getTags() != null && !request.getTags().isEmpty()) {
+                        boolean hasMatchingTag = product.getTags() != null &&
+                                product.getTags().stream().anyMatch(tag -> request.getTags().contains(tag));
+                        if (!hasMatchingTag) return false;
+                    }
 
-        product.getVariants().add(ProductMapper.toProductVariant(variantRequest));
-        return ProductMapper.toProductResponseDto(productRepository.save(product));
+                    // Filter by price range (now on product level, not variant)
+                    if (request.getMinPrice() != null && product.getPrice().compareTo(request.getMinPrice()) < 0) {
+                        return false;
+                    }
+
+                    if (request.getMaxPrice() != null && product.getPrice().compareTo(request.getMaxPrice()) > 0) {
+                        return false;
+                    }
+
+                    return true;
+                })
+                .map(ProductMapper::toProductResponseDto)
+                .collect(Collectors.toList());
     }
 
-    @Override
-    public ProductResponseDto updateProductVariant(String productId, String sku, ProductVariantRequest variantRequest) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new ProductNotFoundException("Product not found with ID: " + productId));
-
-        if (!sku.equals(variantRequest.getSku())) {
-            // This check ensures consistency if SKU is passed in both path and body
-            throw new IllegalArgumentException("SKU in path ('" + sku + "') does not match SKU in request body ('" + variantRequest.getSku() + "').");
-        }
-
-        Optional<ProductVariant> variantToUpdateOptional = product.getVariants().stream()
-                .filter(v -> v.getSku().equals(sku))
-                .findFirst();
-
-        if (variantToUpdateOptional.isEmpty()) {
-            throw new ProductNotFoundException("Variant with SKU '" + sku + "' not found within product ID: " + productId);
-        }
-
-        ProductVariant variantToUpdate = variantToUpdateOptional.get();
-
-        // Update variant details
-        variantToUpdate.setAttributes(variantRequest.getAttributes());
-        variantToUpdate.setPrice(variantRequest.getPrice());
-        variantToUpdate.setQuantity(variantRequest.getQuantity());
-        variantToUpdate.setImageUrl(variantRequest.getImageUrl()); // Update imageUrl
-
-        Product savedProduct = productRepository.save(product);
-        return ProductMapper.toProductResponseDto(savedProduct);
-    }
-
-    @Override
-    public void deleteProductVariant(String productId, String sku) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new ProductNotFoundException("Product not found with ID: " + productId));
-
-        boolean removed = product.getVariants().removeIf(variant -> variant.getSku().equals(sku));
-
-        if (!removed) {
-            throw new ProductNotFoundException("Variant with SKU '" + sku + "' not found in product ID: " + productId);
-        }
-
-
-        productRepository.save(product);
-
-    }
 }

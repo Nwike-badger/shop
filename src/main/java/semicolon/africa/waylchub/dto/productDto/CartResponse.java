@@ -10,13 +10,13 @@ import java.math.BigDecimal;
 import java.util.List;
 
 @Data
-@AllArgsConstructor
 @NoArgsConstructor
+@AllArgsConstructor
 @Builder
 public class CartResponse {
     private String cartId;
     private String userId;
-    private List<CartItem> items; // Can be CartItemResponse DTO if you want to control output further
+    private List<CartItem> items;
     private BigDecimal totalPrice;
-    private String message; // Optional: for success/error messages
+    private String message;
 }

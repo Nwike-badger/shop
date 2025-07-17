@@ -32,22 +32,4 @@ public class UserMapper {
                 .build();
     }
 
-    private ProductResponseDto toResponseDTO(Product product) {
-        return ProductResponseDto.builder()
-                .id(product.getId())
-                .name(product.getName())
-                .description(product.getDescription())
-                .price(product.getPrice())
-                .imageUrls(product.getImageUrls())
-                .category(product.getCategory())
-                .subCategory(product.getSubCategory())
-                .quantityAvailable(product.getQuantityAvailable())
-                .quantitySold(product.getQuantitySold())
-                .isBestSeller(product.isBestSeller())
-                .isNewArrival(product.isNewArrival())
-                .createdAt(product.getCreatedAt())
-                .brand(product.getBrand())
-                .rating(product.getRating())
-                .build();
-    }
 }

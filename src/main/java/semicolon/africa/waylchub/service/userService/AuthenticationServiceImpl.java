@@ -94,10 +94,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
     private void revokeUserTokens(User user, List<TokenType> tokenTypes) {
         tokenTypes.forEach(type -> {
-            Optional<Token> token = tokenRepository.findByUserIdAndTokenType(user.getId(), type);
-            token.ifPresent(t -> {
-                t.setRevoked(true);
-                tokenRepository.save(t);
+            List<Token> tokens = tokenRepository.findAllByUserIdAndTokenType(user.getId(), type);
+            tokens.forEach(token -> {
+                token.setRevoked(true);
+                tokenRepository.save(token);
             });
         });
     }

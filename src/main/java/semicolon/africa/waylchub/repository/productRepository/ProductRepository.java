@@ -10,9 +10,11 @@ import java.util.Optional;
 public interface ProductRepository extends MongoRepository<Product, String> {
     Optional<Product> findByNameAndCategory(String name, String category);
 
-    @Query("{ 'variants.sku' : ?0 }")
-    Optional<Product> findByVariants_Sku(String sku);
+    void deleteAll();
+    Optional<Product> findBySku(String sku);
 
     List<Product> findByCategory(String category);
     List<Product> findBySubCategory(String subCategory);
+    int countByName(String name);
+    void deleteBySku(String sku);
 }

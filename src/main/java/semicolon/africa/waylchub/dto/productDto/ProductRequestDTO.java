@@ -4,17 +4,27 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 @Data
 public class ProductRequestDTO {
     private String name;
     private String description;
-    private BigDecimal price;
-    private List<String> imageUrls;
     private String category;
     private String subCategory;
-    private int quantityAvailable;
+    private List<String> tags;
     private String brand;
-    private boolean isBestSeller;
-    private boolean isNewArrival;
+
+    private String sku;
+    private Map<String, String> attributes;
+    private BigDecimal price;
+    private BigDecimal oldPrice;
+    private int quantity;
+    private List<String> imageUrls;
+    private String discountPercentage;
+    private String discountColorCode;
+
+    private int totalReviews;
+    private double averageRating;
+
 }

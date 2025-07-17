@@ -11,15 +11,13 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 @Data
-@AllArgsConstructor
 @NoArgsConstructor
-@Builder
+@AllArgsConstructor
 public class AddToCartRequest {
-    @NotBlank(message = "User ID cannot be blank")
+    @NotBlank(message = "User ID cannot be empty")
     private String userId;
-
-    @NotEmpty(message = "Cart items cannot be empty")
-    @Valid // This ensures validation is applied to each CartItemDto in the list
+    @NotEmpty(message = "Items list cannot be empty")
+    @Valid
     private List<CartItemDto> items;
 }
 

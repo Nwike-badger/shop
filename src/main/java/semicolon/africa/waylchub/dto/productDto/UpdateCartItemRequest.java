@@ -12,12 +12,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @Builder
 public class UpdateCartItemRequest {
-    @NotBlank(message = "User ID cannot be blank")
+    @NotBlank(message = "User ID cannot be empty")
     private String userId;
-
-    @NotBlank(message = "Product ID cannot be blank")
-    private String productId;
-
-    @Min(value = 0, message = "Quantity must be non-negative") // 0 can mean remove
+    @NotBlank(message = "Product SKU cannot be empty")
+    private String sku;
+    @Min(value = 0, message = "Quantity cannot be negative")
     private int quantity;
 }

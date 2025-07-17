@@ -10,6 +10,7 @@ import semicolon.africa.waylchub.service.userService.AuthenticationService;
 
 @RestController
 @RequestMapping("/api/v1/auth")
+@CrossOrigin(origins = "http://localhost:5173")
 public class AuthenticationController {
 
     private final AuthenticationService authenticationService;

@@ -32,7 +32,7 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new RuntimeException("Default role not found"));
 
         User user = User.builder()
-                .username(request.getUsername())
+                .username(request.getEmail())
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .roles(Collections.singleton(role))

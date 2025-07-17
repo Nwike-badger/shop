@@ -1,52 +1,67 @@
 package semicolon.africa.waylchub.mapper;
 
-import semicolon.africa.waylchub.dto.productDto.*;
-import semicolon.africa.waylchub.model.product.*;
+import semicolon.africa.waylchub.dto.productDto.CreateProductRequest;
+import semicolon.africa.waylchub.dto.productDto.ProductResponseDto;
+import semicolon.africa.waylchub.model.product.Product;
 
 import java.time.LocalDateTime;
-import java.util.Collections;
-import java.util.List;
-import java.util.stream.Collectors;
 
 public class ProductMapper {
-    public static ProductResponseDto toProductResponseDto(Product product) {
-        if (product == null) return null;
-        List<ProductVariantResponseDto> variants = product.getVariants() != null
-                ? product.getVariants().stream().map(ProductMapper::toProductVariantResponseDto).collect(Collectors.toList())
-                : Collections.emptyList();
-        return ProductResponseDto.builder()
-                .id(product.getId())
-                .name(product.getName())
-                .description(product.getDescription())
-                .category(product.getCategory())
-                .subCategory(product.getSubCategory())
-                .tags(product.getTags())
-                .brand(product.getBrand()) // Map brand
-                .variants(variants)
-                .createdAt(product.getCreatedAt())
+
+    public static Product toProduct(CreateProductRequest request) {
+        LocalDateTime now = LocalDateTime.now();
+
+        return Product.builder()
+                .name(request.getName())
+                .description(request.getDescription())
+                .category(request.getCategory())
+                .subCategory(request.getSubCategory())
+                .tags(request.getTags())
+                .brand(request.getBrand())
+
+                .sku(request.getSku())
+                .attributes(request.getAttributes())
+                .price(request.getPrice())
+                .oldPrice(request.getOldPrice())
+                .quantity(request.getQuantity())
+                .imageUrls(request.getImageUrls())
+                .discountPercentage(request.getDiscountPercentage())
+                .discountColorCode(request.getDiscountColorCode())
+
+                .totalReviews(request.getTotalReviews())
+                .averageRating(request.getAverageRating())
+
+                .createdAt(now)
+                .updatedAt(now)
                 .build();
     }
 
-    public static ProductVariantResponseDto toProductVariantResponseDto(ProductVariant variant) {
-        if (variant == null) return null; // Added null check for robustness
-        return new ProductVariantResponseDto(
-                variant.getSku(),
-                variant.getAttributes(),
-                variant.getPrice(),
-                variant.getQuantity(),
-                variant.getImageUrl() // Map imageUrl
-        );
-    }
+    public static ProductResponseDto toProductResponseDto(Product product) {
+        ProductResponseDto dto = new ProductResponseDto();
 
-    // Helper to convert request variant to model variant
-    public static ProductVariant toProductVariant(ProductVariantRequest request) {
-        if (request == null) return null; // Added null check for robustness
-        return new ProductVariant(
-                request.getSku(),
-                request.getAttributes(),
-                request.getPrice(),
-                request.getQuantity(),
-                request.getImageUrl() // Map imageUrl
-        );
+        dto.setId(product.getId());
+        dto.setName(product.getName());
+        dto.setDescription(product.getDescription());
+        dto.setCategory(product.getCategory());
+        dto.setSubCategory(product.getSubCategory());
+        dto.setTags(product.getTags());
+        dto.setBrand(product.getBrand());
+
+        dto.setSku(product.getSku());
+        dto.setAttributes(product.getAttributes());
+        dto.setPrice(product.getPrice());
+        dto.setOldPrice(product.getOldPrice());
+        dto.setQuantity(product.getQuantity());
+        dto.setImageUrls(product.getImageUrls());
+        dto.setDiscountPercentage(product.getDiscountPercentage());
+        dto.setDiscountColorCode(product.getDiscountColorCode());
+
+        dto.setTotalReviews(product.getTotalReviews());
+        dto.setAverageRating(product.getAverageRating());
+
+        dto.setCreatedAt(product.getCreatedAt());
+        dto.setUpdatedAt(product.getUpdatedAt());
+
+        return dto;
     }
 }

@@ -22,6 +22,19 @@ public class ProductResponseDto {
     private String subCategory;
     private List<String> tags;
     private String brand;
-    private List<ProductVariantResponseDto> variants;
+
+    private String sku;
+    private Map<String, String> attributes;
+    private BigDecimal price;
+    private BigDecimal oldPrice;
+    private int quantity;
+    private List<String> imageUrls;
+    private String discountPercentage;
+    private String discountColorCode;
+
+    private int totalReviews;
+    private double averageRating;
+
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }

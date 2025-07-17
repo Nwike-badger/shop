@@ -5,22 +5,32 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class CreateProductRequest {
-    @NotBlank(message = "Product name cannot be empty")
     private String name;
     private String description;
-    @NotBlank(message = "Category cannot be empty")
     private String category;
     private String subCategory;
     private List<String> tags;
     private String brand;
-    @NotNull(message = "Product must have at least one variant")
-    @Size(min = 1, message = "Product must have at least one variant")
-    private List<ProductVariantRequest> variants;
+
+    private String sku;
+    private Map<String, String> attributes;
+    private BigDecimal price;
+    private BigDecimal oldPrice;
+    private int quantity;
+    private List<String> imageUrls;
+    private String discountPercentage;
+    private String discountColorCode;
+
+    private int totalReviews;
+    private double averageRating;
 }

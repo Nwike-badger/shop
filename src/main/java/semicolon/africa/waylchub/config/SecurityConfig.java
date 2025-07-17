@@ -14,6 +14,8 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import semicolon.africa.waylchub.repository.userRepository.UserRepository;
 import semicolon.africa.waylchub.service.userService.CustomUserDetailsService;
 import semicolon.africa.waylchub.service.userService.JwtService;
@@ -21,12 +23,27 @@ import semicolon.africa.waylchub.service.userService.JwtService;
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
-    // No fields, no constructor
+
 
     @Bean
     public JwtAuthenticationFilter jwtAuthFilter(JwtService jwtService, UserRepository userRepository) {
         return new JwtAuthenticationFilter(jwtService, userRepository);
     }
+
+    @Bean
+    public WebMvcConfigurer corsConfigurer() {
+        return new WebMvcConfigurer() {
+            @Override
+            public void addCorsMappings(CorsRegistry registry) {
+                registry.addMapping("/api/**")
+                        .allowedOrigins("http://localhost:5173")
+                        .allowedMethods("*")
+                        .allowedHeaders("*")
+                        .allowCredentials(true);
+            }
+        };
+    }
+
 
     @Bean
     public SecurityFilterChain securityFilterChain(
@@ -35,16 +52,29 @@ public class SecurityConfig {
             AuthenticationProvider authenticationProvider
     ) throws Exception {
         return http
+                .cors(cors -> {}) // 👈 ADD THIS LINE
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/**", "/api/v1/users/**").permitAll()
+                        .requestMatchers(
+                                "/api/v1/auth/**",
+                                "/api/v1/users/**",
+                                "/api/products",
+                                "/api/products/{id}",
+                                "/api/products/sku/**",
+                                "/api/products/category/**",
+                                "/api/products/sub-category/**"
+                        ).permitAll()
                         .anyRequest().authenticated()
                 )
+
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
+
+
+
 
     @Bean
     public AuthenticationProvider authenticationProvider(CustomUserDetailsService userDetailsService) {
