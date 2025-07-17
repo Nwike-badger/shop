@@ -52,7 +52,7 @@ public class SecurityConfig {
             AuthenticationProvider authenticationProvider
     ) throws Exception {
         return http
-                .cors(cors -> {}) // 👈 ADD THIS LINE
+                .cors(cors -> {})
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
