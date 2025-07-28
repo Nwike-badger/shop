@@ -19,12 +19,12 @@ import java.util.List;
 public class ProductController {
 
     private final ProductService productService;
-    private final ProductRepository productRepository;
+    //private final ProductRepository productRepository;
 
     @PostMapping("/create-product")
     @PreAuthorize("hasRole('ROLE_USER')")
     public ResponseEntity<ProductResponseDto> createProduct(@Valid @RequestBody CreateProductRequest request) {
-        productRepository.deleteAll();
+
         return ResponseEntity.ok(productService.createProduct(request));
     }
 
