@@ -1,14 +1,14 @@
 package semicolon.africa.waylchub.service.orderService;
 
-import semicolon.africa.waylchub.dto.orderDto.OrderRequestDTO;
-import semicolon.africa.waylchub.dto.orderDto.OrderResponseDTO;
+import semicolon.africa.waylchub.dto.orderDto.OrderRequest;
+import semicolon.africa.waylchub.dto.orderDto.OrderResponse;
 
 import java.util.List;
 
 public interface OrderService {
-    OrderResponseDTO placeOrder(OrderRequestDTO request);
-    List<OrderResponseDTO> getOrdersByUser(String userId);
-    List<OrderResponseDTO> getAllOrders(); // for admin
-    OrderResponseDTO getOrderById(String orderId);
-    OrderResponseDTO updateOrderStatus(String orderId, String newStatus); // optional
+    OrderResponse placeOrder(OrderRequest request, String userId);
+//    List<OrderResponse> getOrdersByUser(String userId);
+//    List<OrderResponse> getAllOrders(); // for admin
+//    OrderResponse getOrderById(String orderId);
+//    OrderResponse updateOrderStatus(String orderId, String newStatus);
 }

@@ -37,7 +37,7 @@ public class JwtServiceImpl implements JwtService {
     @Override
     public String generateAccessToken(CustomUserDetails userDetails) {
         Map<String, Object> claims = new HashMap<>();
-        claims.put("id", userDetails.getId());
+        claims.put("id", userDetails.getUserId());
         claims.put("username", userDetails.getUsername());
         claims.put("firstName", userDetails.getFirstName());
         claims.put("lastName", userDetails.getLastName());
@@ -57,7 +57,7 @@ public class JwtServiceImpl implements JwtService {
     @Override
     public String generateRefreshToken(CustomUserDetails userDetails) {
         Map<String, Object> claims = new HashMap<>();
-        claims.put("id", userDetails.getId());
+        claims.put("id", userDetails.getUserId());
         claims.put("username", userDetails.getUsername());
 
         return Jwts.builder()

@@ -1,12 +1,13 @@
 package semicolon.africa.waylchub.dto.orderDto;
 
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import semicolon.africa.waylchub.model.order.OrderItem;
 import semicolon.africa.waylchub.model.order.OrderStatus;
-import semicolon.africa.waylchub.model.order.PaymentStatus;
+import semicolon.africa.waylchub.model.product.Address;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -16,15 +17,13 @@ import java.util.List;
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
-public class OrderResponseDTO {
-
+public class OrderResponse {
     private String orderId;
     private String userId;
     private List<OrderItem> items;
+    private Address shippingAddress;
+    private String paymentMethod;
     private BigDecimal totalAmount;
-    private String shippingAddress;
     private OrderStatus orderStatus;
-    private PaymentStatus paymentStatus;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
+    private LocalDateTime orderDate;
 }

@@ -2,8 +2,6 @@ package semicolon.africa.waylchub.mapper;
 
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import semicolon.africa.waylchub.dto.userDTO.CustomUserDetails;
-import semicolon.africa.waylchub.dto.productDto.ProductResponseDto;
-import semicolon.africa.waylchub.model.product.Product;
 import semicolon.africa.waylchub.model.user.User;
 
 import java.util.List;
@@ -17,7 +15,7 @@ public class UserMapper {
                 .collect(Collectors.toList());
 
         return CustomUserDetails.builder()
-                .id(user.getId())
+                .userId(user.getId())
                 .username(user.getUsername())
                 .password(user.getPassword())
                 .firstName(user.getFirstName())

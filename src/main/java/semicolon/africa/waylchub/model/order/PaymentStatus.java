@@ -1,9 +1,9 @@
 package semicolon.africa.waylchub.model.order;
 
 public enum PaymentStatus {
-    UNPAID,
-    PAID,
+    PENDING,
+    SUCCESS,
     FAILED,
     REFUNDED,
-    PENDING
+    CANCELLED // For payment that was initiated but cancelled
 }

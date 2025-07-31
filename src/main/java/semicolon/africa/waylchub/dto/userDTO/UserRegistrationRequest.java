@@ -4,6 +4,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
+import semicolon.africa.waylchub.model.product.Address;
 
 @Data
 public class UserRegistrationRequest {
@@ -21,5 +22,8 @@ public class UserRegistrationRequest {
 
     @NotBlank(message = "Last name is required")
     private String lastName;
+
+    @NotBlank(message = "address is required")
+    private Address address;
 
 }

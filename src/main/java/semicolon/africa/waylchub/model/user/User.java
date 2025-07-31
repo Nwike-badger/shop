@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import semicolon.africa.waylchub.model.product.Address;
 import semicolon.africa.waylchub.model.product.Cart;
 import semicolon.africa.waylchub.model.user.Role;
 
@@ -47,7 +48,7 @@ public class User {
 
     private String lastName;
 
-    private String address;
+    private Address address;
 
     private Cart cart;
 

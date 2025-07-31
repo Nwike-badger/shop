@@ -12,14 +12,9 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @Builder
 public class OrderItem {
-
     private String productId;
-
-    private String name;
-
-    private BigDecimal price;
-
+    private String productName; // To save the name at the time of order
+    private String imageUrl; // To save image URL at the time of order
     private int quantity;
-
-    private String imageUrl;
+    private BigDecimal priceAtPurchase; // Price at the time the order was placed
 }
