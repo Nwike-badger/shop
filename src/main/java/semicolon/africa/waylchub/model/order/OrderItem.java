@@ -16,5 +16,6 @@ public class OrderItem {
     private String productName; // To save the name at the time of order
     private String imageUrl; // To save image URL at the time of order
     private int quantity;
-    private BigDecimal priceAtPurchase; // Price at the time the order was placed
+    private BigDecimal unitPrice;// Price at the time the order was placed
+    private BigDecimal subTotal;
 }

@@ -1,5 +1,7 @@
 package semicolon.africa.waylchub.dto.orderDto;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -12,9 +14,9 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @Builder
 public class OrderItemRequest {
-    private String productId;
-    private String productName;
-    private String imageUrl;
+    @NotNull
+    private String productId; // Changed from Long to String for MongoDB
+
+    @Min(1)
     private int quantity;
-    private BigDecimal priceAtPurchase;
 }

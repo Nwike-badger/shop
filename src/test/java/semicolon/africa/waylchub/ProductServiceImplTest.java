@@ -1,19 +1,5 @@
 package semicolon.africa.waylchub;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.*;
-import semicolon.africa.waylchub.dto.productDto.*;
-import semicolon.africa.waylchub.model.product.Product;
-import semicolon.africa.waylchub.repository.productRepository.ProductRepository;
-import semicolon.africa.waylchub.service.productService.ProductServiceImpl;
-
-import java.math.BigDecimal;
-import java.util.*;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
-
 class ProductServiceImplTest {
 
 //    @Mock

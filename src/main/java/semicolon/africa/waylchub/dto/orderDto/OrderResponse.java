@@ -19,11 +19,8 @@ import java.util.List;
 @Builder
 public class OrderResponse {
     private String orderId;
-    private String userId;
-    private List<OrderItem> items;
-    private Address shippingAddress;
-    private String paymentMethod;
+    private String customerEmail;
     private BigDecimal totalAmount;
-    private OrderStatus orderStatus;
-    private LocalDateTime orderDate;
+    private String status;
+    private List<String> itemNames;
 }
