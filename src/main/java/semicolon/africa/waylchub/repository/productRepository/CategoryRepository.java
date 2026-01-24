@@ -13,4 +13,6 @@ public interface CategoryRepository extends MongoRepository<Category, String> {
     List<Category> findByParentId(String parentId);
 
     List<Category> findByParentIsNull();
+
+    List<Category> findAllByLineageContaining(String id);
 }

@@ -58,11 +58,12 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/v1/auth/**",
                                 "/api/v1/users/**",
-                                "/api/products",
-                                "/api/products/{id}",
-                                "/api/products/sku/**",
-                                "/api/products/category/**",
-                                "/api/products/sub-category/**"
+                                "/api/categories/**",   // Needed for Navbar Menu
+                                "/api/products",        // Get All
+                                "/api/products/search", // Navbar Search
+                                "/api/products/filter", // Product Page Filtering
+                                "/api/products/category/**", // Category Pages
+                                "/api/products/{id}"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )

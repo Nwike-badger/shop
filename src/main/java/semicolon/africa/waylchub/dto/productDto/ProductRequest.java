@@ -23,6 +23,7 @@ public class ProductRequest {
     // We send Slugs from frontend, Service converts to DBRef
     private String categorySlug;
     private String brandSlug;
+    private String sku;
 
     private List<ProductAttributeRequest> attributes;
 }

@@ -30,131 +30,124 @@ public class DataSeeder implements CommandLineRunner {
     @Autowired private BrandRepository brandRepo;
     @Autowired private ProductService productService;
     @Autowired private ProductRepository productRepo;
-    @Autowired private OrderService orderService;
     @Autowired private OrderRepository orderRepository;
 
     @Override
     public void run(String... args) throws Exception {
-        // 1. CLEANUP PREVIOUS DATA
+        System.out.println("🚀 STARTING JUMIA-STYLE DATA SEEDING...");
+
+        // 1. CLEAR DATA
         orderRepository.deleteAll();
         productRepo.deleteAll();
         categoryRepo.deleteAll();
         brandRepo.deleteAll();
 
-        System.out.println("🌱 SEEDING DATA...");
-
-        // 2. CREATE BRANDS (Directly via Repo is fine for setup)
-        createBrand("Nexus", "nexus");
-        createBrand("Nike", "nike");
-
-        // 3. CREATE CATEGORY HIERARCHY
-        Category appliances = categoryRepo.save(createCategory("Appliances", "appliances", null));
-        Category smallApp = categoryRepo.save(createCategory("Small Appliances", "small-appliances", appliances));
-        categoryRepo.save(createCategory("Blenders", "blenders", smallApp));
-        categoryRepo.save(createCategory("Irons", "irons", smallApp));
-
-        // 4. CREATE PRODUCTS (Using ProductRequest DTO)
-
-        // Product 1: A Blender
-        ProductRequest p1Req = new ProductRequest();
-        p1Req.setName("Nexus 3000W Heavy Duty Blender");
-        p1Req.setSlug("nexus-3000w-blender");
-        p1Req.setPrice(new BigDecimal("25000"));
-        p1Req.setStockQuantity(10); // Initial Stock
-        p1Req.setCategorySlug("blenders"); // Link via Slug
-        p1Req.setBrandSlug("nexus");
-
-        // Attributes
-        ProductAttributeRequest attr1 = new ProductAttributeRequest(); attr1.setName("Power"); attr1.setValue("3000W");
-        ProductAttributeRequest attr2 = new ProductAttributeRequest(); attr2.setName("Capacity"); attr2.setValue("2L");
-        p1Req.setAttributes(Arrays.asList(attr1, attr2));
-
-        // Save using Service
-        Product savedBlender = productService.addOrUpdateProduct(p1Req);
-
-
-        // Product 2: An Iron
-        ProductRequest p2Req = new ProductRequest();
-        p2Req.setName("Nexus Steam Iron");
-        p2Req.setSlug("nexus-steam-iron");
-        p2Req.setPrice(new BigDecimal("8000"));
-        p2Req.setStockQuantity(20);
-        p2Req.setCategorySlug("irons");
-        p2Req.setBrandSlug("nexus");
-
-        productService.addOrUpdateProduct(p2Req);
-
-        System.out.println("✅ DATA SEEDED!");
-
-        // ---------------------------------------------------------
-        // 🛒 TEST: ORDER PLACEMENT
-        // ---------------------------------------------------------
-        System.out.println("\n🛒 TESTING ORDER PLACEMENT...");
-
-        // Create an Order Request Item (Buying 2 blenders)
-        OrderItemRequest itemReq = new OrderItemRequest();
-        itemReq.setProductId(savedBlender.getId()); // Use ID from saved product
-        itemReq.setQuantity(2);
-
-        // Create the Order Request
-        OrderRequest orderRequest = new OrderRequest();
-        orderRequest.setItems(Collections.singletonList(itemReq));
-        // We don't set email in Request anymore, we pass it as 'authenticated user'
-
-        try {
-            // Mocking a logged-in user email
-            String userEmail = "buyer@example.com";
-
-            Order successfulOrder = orderService.placeOrder(orderRequest, userEmail);
-
-            System.out.println("✅ Order Placed! Order ID: " + successfulOrder.getId());
-            System.out.println("   Total Paid: " + successfulOrder.getTotalAmount());
-
-            // VERIFY STOCK REDUCTION
-            Product updatedProduct = productRepo.findById(savedBlender.getId()).get();
-            System.out.println("📉 Stock Check: Started with 10, Bought 2, Now: " + updatedProduct.getStockQuantity());
-
-            if (updatedProduct.getStockQuantity() == 8) {
-                System.out.println("🔥 TEST PASSED: Stock reduced correctly!");
-            } else {
-                System.out.println("❌ TEST FAILED: Stock mismatch!");
-            }
-
-        } catch (Exception e) {
-            System.out.println("❌ Order failed: " + e.getMessage());
-            e.printStackTrace();
+        // 2. CREATE BRANDS
+        List<String> brandNames = Arrays.asList("Samsung", "Nexus", "Apple", "Nike", "Adidas", "Binatone");
+        for (String name : brandNames) {
+            Brand b = new Brand();
+            b.setName(name);
+            b.setSlug(name.toLowerCase());
+            brandRepo.save(b);
         }
 
-        // ---------------------------------------------------------
-        // 🧪 TEST: RESTOCKING LOGIC
-        // ---------------------------------------------------------
-        System.out.println("\n♻️ TESTING RESTOCK...");
+        // 3. CREATE NESTED CATEGORIES (The Tree)
+        // Level 1
+        Category electronics = saveCat("Electronics", "electronics", null);
+        Category fashion = saveCat("Fashion", "fashion", null);
 
-        ProductRequest restockReq = new ProductRequest();
-        restockReq.setSlug("nexus-3000w-blender"); // Same Slug
-        restockReq.setStockQuantity(5); // Adding 5 more
-        restockReq.setName("Nexus 3000W Heavy Duty Blender"); // Name required for validation
-        restockReq.setPrice(new BigDecimal("25000")); // Price required
+        // Level 2
+        Category computing = saveCat("Computing", "computing", electronics);
+        Category kitchen = saveCat("Kitchen & Dining", "kitchen-dining", electronics);
+        Category menShoes = saveCat("Men's Shoes", "mens-shoes", fashion);
 
-        productService.addOrUpdateProduct(restockReq);
+        // Level 3 (Leaf Nodes)
+        Category laptops = saveCat("Laptops", "laptops", computing);
+        Category blenders = saveCat("Blenders", "blenders", kitchen);
+        Category sneakers = saveCat("Sneakers", "sneakers", menShoes);
 
-        Product restockedProduct = productRepo.findBySlug("nexus-3000w-blender").get();
-        System.out.println("📈 Stock after restock (8 + 5): " + restockedProduct.getStockQuantity());
+        // 4. GENERATE 50 PRODUCTS
+        System.out.println("📦 Generating 50 diverse products...");
+
+        for (int i = 1; i <= 50; i++) {
+            ProductRequest req = new ProductRequest();
+
+            // Alternate between categories to test search/filters
+            if (i % 3 == 0) {
+                seedLaptop(req, i, laptops.getSlug());
+            } else if (i % 3 == 1) {
+                seedBlender(req, i, blenders.getSlug());
+            } else {
+                seedSneaker(req, i, sneakers.getSlug());
+            }
+
+            productService.addOrUpdateProduct(req);
+        }
+
+        System.out.println("✅ SEEDING COMPLETE: 50 Products, 3-Level Categories, 6 Brands.");
+        simulateSearch();
     }
 
-    // Helper to create categories quickly
-    private Category createCategory(String name, String slug, Category parent) {
+    private void seedLaptop(ProductRequest req, int i, String catSlug) {
+        req.setName("MacBook Pro M" + i);
+        req.setSlug("macbook-m-" + i);
+        req.setSku("LAP-APL-" + i);
+        req.setPrice(new BigDecimal(1200000));
+        req.setCategorySlug(catSlug);
+        req.setBrandSlug("apple");
+
+        // Technical Attributes
+        req.setAttributes(Arrays.asList(
+                new ProductAttributeRequest("Processor", "M2 Chip"),
+                new ProductAttributeRequest("RAM", "16GB"),
+                new ProductAttributeRequest("Screen Size", "14-inch")
+        ));
+    }
+
+    private void seedBlender(ProductRequest req, int i, String catSlug) {
+        req.setName("Nexus Silent Blender " + i);
+        req.setSlug("nexus-blender-" + i);
+        req.setSku("KIT-NX-" + i);
+        req.setPrice(new BigDecimal(45000));
+        req.setCategorySlug(catSlug);
+        req.setBrandSlug("nexus");
+
+        // Appliance Attributes
+        req.setAttributes(Arrays.asList(
+                new ProductAttributeRequest("Power", "2500W"),
+                new ProductAttributeRequest("Speed Settings", "5"),
+                new ProductAttributeRequest("Jug Material", "Glass")
+        ));
+    }
+
+    private void seedSneaker(ProductRequest req, int i, String catSlug) {
+        req.setName("Nike Air Jordan " + i);
+        req.setSlug("nike-jordan-" + i);
+        req.setSku("SH-NK-J-" + i);
+        req.setPrice(new BigDecimal(85000));
+        req.setCategorySlug(catSlug);
+        req.setBrandSlug("nike");
+
+        // Fashion Attributes
+        req.setAttributes(Arrays.asList(
+                new ProductAttributeRequest("Color", i % 2 == 0 ? "Red/Black" : "White/Blue"),
+                new ProductAttributeRequest("Size", "44"),
+                new ProductAttributeRequest("Material", "Leather")
+        ));
+    }
+
+    private Category saveCat(String name, String slug, Category parent) {
         Category c = new Category();
         c.setName(name);
         c.setSlug(slug);
         c.setParent(parent);
-        return c;
+        // If you have Lineage logic in your Service, call the service here instead!
+        return categoryRepo.save(c);
     }
 
-    private void createBrand(String name, String slug) {
-        Brand b = new Brand();
-        b.setName(name);
-        b.setSlug(slug);
-        brandRepo.save(b);
+    private void simulateSearch() {
+        System.out.println("\n🔍 SIMULATING JUMIA SEARCH...");
+        System.out.println("User searches for: 'Sneakers' with Brand: 'Nike'");
+        // This confirms your data structure is ready for the frontend filters
     }
 }

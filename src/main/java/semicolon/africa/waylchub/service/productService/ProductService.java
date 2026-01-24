@@ -1,114 +1,113 @@
 package semicolon.africa.waylchub.service.productService;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.TextCriteria;
 import org.springframework.stereotype.Service;
+import org.springframework.data.support.PageableExecutionUtils; // ✅ CORRECT IMPORT
+
+import semicolon.africa.waylchub.dto.productDto.ProductFilterRequest;
 import semicolon.africa.waylchub.dto.productDto.ProductRequest;
 import semicolon.africa.waylchub.exception.ResourceNotFoundException;
-import semicolon.africa.waylchub.model.product.*;
+import semicolon.africa.waylchub.model.product.Category;
+import semicolon.africa.waylchub.model.product.Product;
 import semicolon.africa.waylchub.repository.productRepository.CategoryRepository;
 import semicolon.africa.waylchub.repository.productRepository.ProductRepository;
-// You likely need a BrandRepository too
-// import semicolon.africa.waylchub.repository.productRepository.BrandRepository;
 
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.List;
+import java.util.Optional;
 
 @Service
+@RequiredArgsConstructor
 public class ProductService {
 
-    @Autowired
-    private ProductRepository productRepository;
-    @Autowired
-    private CategoryRepository categoryRepository;
+    private final ProductRepository productRepository;
+    private final CategoryRepository categoryRepository;
+    private final MongoTemplate mongoTemplate;
 
-    // @Autowired private BrandRepository brandRepository; // Uncomment when you have this
-
-    /**
-     * CREATE OR UPDATE PRODUCT
-     * Accepts DTO, converts to Entity, handles Relationships
-     */
     public Product addOrUpdateProduct(ProductRequest request) {
-        // 1. Check if product exists by Slug
-        Optional<Product> existingProductOpt = productRepository.findBySlug(request.getSlug());
+        Optional<Product> existingOpt = productRepository.findBySlug(request.getSlug());
+        Product product = existingOpt.orElse(new Product());
 
-        if (existingProductOpt.isPresent()) {
-            // --- SCENARIO A: UPDATE (Restock + Price Update) ---
-            Product existingProduct = existingProductOpt.get();
+        product.setName(request.getName());
+        product.setSlug(request.getSlug());
+        product.setSku(request.getSku());
+        product.setPrice(request.getPrice());
 
-            // Update Stock
-            int currentStock = existingProduct.getStockQuantity() == null ? 0 : existingProduct.getStockQuantity();
-            int addedStock = request.getStockQuantity() == null ? 0 : request.getStockQuantity();
-            existingProduct.setStockQuantity(currentStock + addedStock);
+        int currentStock = product.getStockQuantity() == null ? 0 : product.getStockQuantity();
+        int newStock = request.getStockQuantity() == null ? 0 : request.getStockQuantity();
+        product.setStockQuantity(existingOpt.isPresent() ? currentStock + newStock : newStock);
 
-            // Update Price if changed
-            if (request.getPrice() != null) {
-                existingProduct.setPrice(request.getPrice());
-            }
-
-            // Update Name/Desc if needed
-            existingProduct.setName(request.getName());
-
-            return productRepository.save(existingProduct);
-
-        } else {
-            // --- SCENARIO B: CREATE NEW ---
-            Product newProduct = new Product();
-            newProduct.setName(request.getName());
-            newProduct.setSlug(request.getSlug());
-            newProduct.setPrice(request.getPrice());
-            newProduct.setStockQuantity(request.getStockQuantity() == null ? 0 : request.getStockQuantity());
-
-            // MAP ATTRIBUTES
-            if(request.getAttributes() != null) {
-                List<ProductAttribute> attrs = request.getAttributes().stream()
-                        .map(dto -> new ProductAttribute(dto.getName(), dto.getValue())) // Assuming ProductAttribute has this constructor
-                        .collect(Collectors.toList());
-                newProduct.setAttributes(attrs);
-            }
-
-            // LINK CATEGORY (Crucial Step)
-            if (request.getCategorySlug() != null) {
-                Category cat = categoryRepository.findBySlug(request.getCategorySlug())
-                        .orElseThrow(() -> new ResourceNotFoundException("Category not found: " + request.getCategorySlug()));
-                newProduct.setCategory(cat);
-            }
-
-            // LINK BRAND (Logic similar to Category)
-            /*
-            if (request.getBrandSlug() != null) {
-                Brand brand = brandRepository.findBySlug(request.getBrandSlug())
-                        .orElseThrow(() -> new RuntimeException("Brand not found"));
-                newProduct.setBrand(brand);
-            }
-            */
-
-            return productRepository.save(newProduct);
+        if (request.getAttributes() != null) {
+            request.getAttributes().forEach(attr ->
+                    product.getAttributes().put(attr.getName(), attr.getValue())
+            );
         }
-    }
 
-    public List<Product> getProductsByCategorySlug(String slug) {
-        Category rootCategory = categoryRepository.findBySlug(slug)
-                .orElseThrow(() -> new ResourceNotFoundException("Category not found: " + slug));
-
-        List<Category> allCategoriesToSearch = new ArrayList<>();
-        collectAllCategoryChildren(rootCategory, allCategoriesToSearch);
-
-        return productRepository.findByCategoryIn(allCategoriesToSearch);
-    }
-
-    private void collectAllCategoryChildren(Category currentCategory, List<Category> accumulator) {
-        accumulator.add(currentCategory);
-        List<Category> children = categoryRepository.findByParentId(currentCategory.getId());
-        for (Category child : children) {
-            collectAllCategoryChildren(child, accumulator);
+        if (request.getCategorySlug() != null) {
+            Category cat = categoryRepository.findBySlug(request.getCategorySlug())
+                    .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
+            product.setCategory(cat);
+            product.setCategoryName(cat.getName());
+            product.setCategorySlug(cat.getSlug());
         }
+
+        return productRepository.save(product);
     }
 
-    public List<Product> searchProducts(String keyword) {
-        return productRepository.findByNameContainingIgnoreCase(keyword);
+    public Page<Product> filterProducts(ProductFilterRequest filter, Pageable pageable) {
+        Query query = new Query();
+
+        if (filter.getKeyword() != null && !filter.getKeyword().isEmpty()) {
+            query.addCriteria(TextCriteria.forDefaultLanguage().matching(filter.getKeyword()));
+        }
+
+        if (filter.getCategorySlug() != null) {
+            Category root = categoryRepository.findBySlug(filter.getCategorySlug())
+                    .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
+
+            List<Category> subCategories = categoryRepository.findAllByLineageContaining(root.getId());
+            subCategories.add(root);
+
+            query.addCriteria(Criteria.where("category").in(subCategories));
+        }
+
+        if (filter.getMinPrice() != null || filter.getMaxPrice() != null) {
+            Criteria price = Criteria.where("price");
+            if (filter.getMinPrice() != null) price.gte(filter.getMinPrice());
+            if (filter.getMaxPrice() != null) price.lte(filter.getMaxPrice());
+            query.addCriteria(price);
+        }
+
+        if (filter.getAttributes() != null) {
+            filter.getAttributes().forEach((key, value) ->
+                    query.addCriteria(Criteria.where("attributes." + key).is(value))
+            );
+        }
+
+        // Pagination Execution
+        long count = mongoTemplate.count(query, Product.class);
+        List<Product> products = mongoTemplate.find(query.with(pageable), Product.class);
+
+        // ✅ FIXED: Using the correct utility class import
+        return PageableExecutionUtils.getPage(products, pageable, () -> count);
     }
 
     public List<Product> getAllProducts() {
         return productRepository.findAll();
+    }
+
+    public List<Product> getProductsByCategorySlug(String slug) {
+        Category cat = categoryRepository.findBySlug(slug)
+                .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
+        return productRepository.findByCategory(cat);
+    }
+
+    public List<Product> searchProducts(String q) {
+        return productRepository.findByNameContainingIgnoreCase(q);
     }
 }

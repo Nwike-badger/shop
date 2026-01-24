@@ -24,4 +24,5 @@ public class ProductResponse {
     private int stockQuantity;
     private String categorySlug;
 
+
 }

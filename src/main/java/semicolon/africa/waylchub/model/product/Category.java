@@ -1,12 +1,10 @@
 package semicolon.africa.waylchub.model.product;
 
 import lombok.Data;
-import lombok.Getter;
-import lombok.Setter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.mapping.DBRef;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.DBRef;
 
 @Data
 @Document(collection = "categories")
@@ -19,20 +17,19 @@ public class Category {
     private String name;
 
     @Indexed(unique = true)
-    private String slug; // url-friendly: "small-appliances"
+    private String slug;
 
     private String description;
+    private String imageUrl;
 
-    private String imageUrl; // Category thumbnail
-
-    // The Parent Category (e.g., "Small Appliances" has parent "Appliances")
-    // If null, this is a Root Category.
     @DBRef(lazy = true)
     private Category parent;
 
-    // OPTIONAL: Materialized path for fast "breadcrumbing"
-    // e.g., "appliances/small-appliances/blenders"
-    private String categoryPath;
+    // SCALABILITY FIX: "Materialized Path"
+    // Stores the full breadcrumb ID string: ",Fashion_ID,Mens_ID,Shoes_ID,"
+    // This allows finding all children in ONE query using Regex.
+    @Indexed
+    private String lineage;
 
     private boolean isActive = true;
 }

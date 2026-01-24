@@ -13,6 +13,7 @@ public interface ProductRepository extends MongoRepository<Product, String> {
     // 1. Search by exact Category (e.g., just "Blenders")
     List<Product> findByCategory(Category category);
 
+
     // 2. THE MAGICAL QUERY: Search by a LIST of Categories
     // This allows fetching products from "Appliances" OR "Blenders" OR "Toasters" simultaneously
     List<Product> findByCategoryIn(List<Category> categories);
