@@ -2,8 +2,10 @@ package semicolon.africa.waylchub.dto.productDto;
 
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
+import semicolon.africa.waylchub.model.product.ProductImage;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -26,4 +28,5 @@ public class ProductRequest {
     private String sku;
 
     private List<ProductAttributeRequest> attributes;
+    private List<ProductImage> images = new ArrayList<>();
 }

@@ -18,6 +18,8 @@ import semicolon.africa.waylchub.model.product.Product;
 import semicolon.africa.waylchub.repository.productRepository.CategoryRepository;
 import semicolon.africa.waylchub.repository.productRepository.ProductRepository;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -38,6 +40,7 @@ public class ProductService {
         product.setSku(request.getSku());
         product.setPrice(request.getPrice());
 
+
         int currentStock = product.getStockQuantity() == null ? 0 : product.getStockQuantity();
         int newStock = request.getStockQuantity() == null ? 0 : request.getStockQuantity();
         product.setStockQuantity(existingOpt.isPresent() ? currentStock + newStock : newStock);
@@ -46,6 +49,9 @@ public class ProductService {
             request.getAttributes().forEach(attr ->
                     product.getAttributes().put(attr.getName(), attr.getValue())
             );
+        }
+        if (request.getImages() != null) {
+            product.setImages(request.getImages());
         }
 
         if (request.getCategorySlug() != null) {
@@ -89,11 +95,10 @@ public class ProductService {
             );
         }
 
-        // Pagination Execution
         long count = mongoTemplate.count(query, Product.class);
         List<Product> products = mongoTemplate.find(query.with(pageable), Product.class);
 
-        // ✅ FIXED: Using the correct utility class import
+
         return PageableExecutionUtils.getPage(products, pageable, () -> count);
     }
 
@@ -101,10 +106,67 @@ public class ProductService {
         return productRepository.findAll();
     }
 
+    public void applyDiscount(String productId, BigDecimal newPrice) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+
+        // Save the old price as "CompareAtPrice" so users see the discount
+        if (product.getCompareAtPrice() == null) {
+            product.setCompareAtPrice(product.getPrice());
+        }
+
+        product.setPrice(newPrice);
+        product.setOnSale(true);
+
+        productRepository.save(product);
+    }
+
+
+//    public void incrementSalesCount(String productId, int quantitySold) {
+//        // MongoDB "inc" operation is atomic and very fast
+//        Update update = new Update().inc("soldCount", quantitySold);
+//        Query query = new Query(Criteria.where("id").is(productId));
+//        mongoTemplate.updateFirst(query, update, Product.class);
+//    }
+
+    // Inside ReviewService
+    public void addReview(String productId, int starRating, String comment) {
+        // 1. Save the review in 'reviews' collection...
+
+        // 2. Recalculate average for the product
+        // (This keeps reads FAST because we don't calculate averages on every page load)
+        Product p = productRepository.findById(productId).get();
+
+        double newTotal = (p.getAverageRating() * p.getReviewCount()) + starRating;
+        int newCount = p.getReviewCount() + 1;
+
+        p.setReviewCount(newCount);
+        p.setAverageRating(newTotal / newCount);
+
+        productRepository.save(p);
+    }
+
     public List<Product> getProductsByCategorySlug(String slug) {
-        Category cat = categoryRepository.findBySlug(slug)
+        // 1. Find the root category (e.g., "Mobile Phones")
+        Category root = categoryRepository.findBySlug(slug)
                 .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
-        return productRepository.findByCategory(cat);
+
+        // 2. Collect ALL categories in this branch (Root + Children + Grandchildren)
+        List<Category> categoriesToSearch = new ArrayList<>();
+        collectCategoriesRecursively(root, categoriesToSearch);
+
+
+        return productRepository.findByCategoryIn(categoriesToSearch);
+    }
+
+
+    private void collectCategoriesRecursively(Category current, List<Category> accumulator) {
+        accumulator.add(current);
+        // Find children of the current category
+        List<Category> children = categoryRepository.findByParentId(current.getId());
+        for (Category child : children) {
+            collectCategoriesRecursively(child, accumulator);
+        }
     }
 
     public List<Product> searchProducts(String q) {

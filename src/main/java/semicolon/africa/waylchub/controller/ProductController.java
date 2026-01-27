@@ -77,7 +77,13 @@ public class ProductController {
                 .stockQuantity(p.getStockQuantity())
                 .categoryName(p.getCategoryName()) // Use denormalized name
                 .categorySlug(p.getCategorySlug())
+                .images(p.getImages() != null ? p.getImages() : List.of())
                 .brandName(p.getBrand() != null ? p.getBrand().getName() : "Generic")
                 .build();
     }
+
+
+
+
+
 }
