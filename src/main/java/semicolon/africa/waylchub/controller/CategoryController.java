@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import semicolon.africa.waylchub.dto.productDto.CategoryTreeResponse;
+import semicolon.africa.waylchub.model.product.Category;
 import semicolon.africa.waylchub.service.productService.CategoryService;
 
 import java.util.List;
@@ -21,4 +22,10 @@ public class CategoryController {
     public ResponseEntity<List<CategoryTreeResponse>> getTree() {
         return ResponseEntity.ok(categoryService.getCategoryTree());
     }
+
+    @GetMapping("/featured")
+    public ResponseEntity<List<Category>> getFeaturedCategories() {
+        return ResponseEntity.ok(categoryService.getFeaturedCategories());
+    }
+
 }

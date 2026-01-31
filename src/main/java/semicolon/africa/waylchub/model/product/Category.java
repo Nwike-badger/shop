@@ -1,5 +1,6 @@
 package semicolon.africa.waylchub.model.product;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
@@ -23,13 +24,18 @@ public class Category {
     private String imageUrl;
 
     @DBRef(lazy = true)
+    @JsonIgnore
     private Category parent;
 
-    // SCALABILITY FIX: "Materialized Path"
-    // Stores the full breadcrumb ID string: ",Fashion_ID,Mens_ID,Shoes_ID,"
-    // This allows finding all children in ONE query using Regex.
+
     @Indexed
     private String lineage;
 
+
     private boolean isActive = true;
+
+    @Indexed
+    private boolean isFeatured = false;
+
+    private Integer displayOrder;
 }

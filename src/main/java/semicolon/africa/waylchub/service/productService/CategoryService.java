@@ -7,7 +7,10 @@ import semicolon.africa.waylchub.dto.productDto.CategoryTreeResponse;
 import semicolon.africa.waylchub.model.product.Category;
 import semicolon.africa.waylchub.repository.productRepository.CategoryRepository;
 
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -19,6 +22,7 @@ public class CategoryService {
         Category cat = new Category();
         cat.setName(req.getName());
         cat.setSlug(req.getSlug());
+
 
         if (req.getParentSlug() != null && !req.getParentSlug().isEmpty()) {
             Category parent = categoryRepository.findBySlug(req.getParentSlug())
@@ -41,6 +45,32 @@ public class CategoryService {
         List<Category> roots = categoryRepository.findByParentIsNull();
         return roots.stream().map(this::buildTree).toList();
     }
+
+    public List<Category> getFeaturedCategories() {
+        // 1. Get all categories marked to show on home (leaves, roots, whatever you picked)
+        List<Category> allFeatured = categoryRepository.findFeaturedCategoriesCustom();
+
+        // 2. Bucket 1: The ones you specifically ordered (e.g., 1, 2, 5)
+        List<Category> ordered = allFeatured.stream()
+                .filter(c -> c.getDisplayOrder() != null)
+                .sorted(Comparator.comparingInt(Category::getDisplayOrder))
+                .collect(Collectors.toList());
+
+        // 3. Bucket 2: The ones you didn't number (Randoms)
+        List<Category> randoms = allFeatured.stream()
+                .filter(c -> c.getDisplayOrder() == null)
+                .collect(Collectors.toList());
+
+        // 4. Shuffle the random bucket to satisfy "arranges by random"
+        Collections.shuffle(randoms);
+
+        // 5. Merge: Ordered first, then Randoms
+        ordered.addAll(randoms);
+
+        return ordered;
+    }
+
+
 
     private CategoryTreeResponse buildTree(Category category) {
         CategoryTreeResponse dto = new CategoryTreeResponse();

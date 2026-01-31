@@ -66,22 +66,20 @@ public class Product {
     // Denormalized fields
     private String categoryName;
     private String categorySlug;
-    private String brandName; // Add this too to save another lookup!
-
-    // Flexible Attributes (Color: Red, Size: XL)
+    private String brandName;
     private Map<String, String> attributes = new HashMap<>();
 
     private List<ProductImage> images = new ArrayList<>();
 
     private boolean isActive = true;
 
-    // --- AUDITING & SAFETY (Crucial for Production) ---
+
 
     @CreatedDate
-    private Instant createdAt; // Knows WHEN it was added
+    private Instant createdAt;
 
     @LastModifiedDate
-    private Instant updatedAt; // Knows WHEN it was last changed
+    private Instant updatedAt;
 
     @Version
     private Long version; // PREVENTS OVERWRITES.

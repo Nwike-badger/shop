@@ -1,6 +1,7 @@
 package semicolon.africa.waylchub.repository.productRepository;
 
 import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
 import semicolon.africa.waylchub.model.product.Category;
 
 import java.util.List;
@@ -15,4 +16,6 @@ public interface CategoryRepository extends MongoRepository<Category, String> {
     List<Category> findByParentIsNull();
 
     List<Category> findAllByLineageContaining(String id);
+    @Query("{ 'isFeatured': true }")
+    List<Category> findFeaturedCategoriesCustom();
 }
