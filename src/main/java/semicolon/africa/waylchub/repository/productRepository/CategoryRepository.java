@@ -10,7 +10,7 @@ import java.util.Optional;
 public interface CategoryRepository extends MongoRepository<Category, String> {
     Optional<Category> findBySlug(String slug);
 
-    // Finds immediate children (e.g., find "Blenders" inside "Small Appliances")
+
     List<Category> findByParentId(String parentId);
 
     List<Category> findByParentIsNull();

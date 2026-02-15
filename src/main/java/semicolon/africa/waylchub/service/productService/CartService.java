@@ -1,8 +1,8 @@
 package semicolon.africa.waylchub.service.productService;
 
-import semicolon.africa.waylchub.dto.productDto.AddToCartRequest;
-import semicolon.africa.waylchub.dto.productDto.CartResponse;
-import semicolon.africa.waylchub.dto.productDto.UpdateCartItemRequest;
+import semicolon.africa.waylchub.dto.productDto.cart.AddToCartRequest;
+import semicolon.africa.waylchub.dto.productDto.cart.CartResponse;
+import semicolon.africa.waylchub.dto.productDto.cart.UpdateCartItemRequest;
 import semicolon.africa.waylchub.exception.InsufficientStockException;
 import semicolon.africa.waylchub.exception.InvalidCartOperationException;
 import semicolon.africa.waylchub.exception.ResourceNotFoundException;

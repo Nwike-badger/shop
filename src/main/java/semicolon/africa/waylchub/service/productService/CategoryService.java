@@ -1,15 +1,14 @@
 package semicolon.africa.waylchub.service.productService;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
-import semicolon.africa.waylchub.dto.productDto.CategoryRequest;
 import semicolon.africa.waylchub.dto.productDto.CategoryTreeResponse;
 import semicolon.africa.waylchub.model.product.Category;
 import semicolon.africa.waylchub.repository.productRepository.CategoryRepository;
 
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -18,69 +17,47 @@ public class CategoryService {
 
     private final CategoryRepository categoryRepository;
 
-    public Category createCategory(CategoryRequest req) {
-        Category cat = new Category();
-        cat.setName(req.getName());
-        cat.setSlug(req.getSlug());
+    // --- READ (Cached) ---
 
-
-        if (req.getParentSlug() != null && !req.getParentSlug().isEmpty()) {
-            Category parent = categoryRepository.findBySlug(req.getParentSlug())
-                    .orElseThrow(() -> new RuntimeException("Parent category not found: " + req.getParentSlug()));
-
-            cat.setParent(parent);
-
-            // ✅ Logic: Parent's lineage + Parent's ID + ","
-            // If parent is root, its lineage might be ","
-            String parentLineage = parent.getLineage() == null ? "," : parent.getLineage();
-            cat.setLineage(parentLineage + parent.getId() + ",");
-        } else {
-            cat.setLineage(","); // Root Lineage
-        }
-
-        return categoryRepository.save(cat);
-    }
-
+    @Cacheable(value = "categoryTree", key = "'fullTree'")
+    // ^^^ This saves the result to Redis. Next time, it skips the DB entirely.
     public List<CategoryTreeResponse> getCategoryTree() {
-        List<Category> roots = categoryRepository.findByParentIsNull();
-        return roots.stream().map(this::buildTree).toList();
+        List<Category> allCategories = categoryRepository.findAll();
+        Map<String, List<Category>> childrenMap = allCategories.stream()
+                .filter(c -> c.getParent() != null)
+                .collect(Collectors.groupingBy(c -> c.getParent().getId()));
+
+        return allCategories.stream()
+                .filter(c -> c.getParent() == null)
+                .map(root -> buildTreeInMemory(root, childrenMap))
+                .toList();
     }
 
-    public List<Category> getFeaturedCategories() {
-        // 1. Get all categories marked to show on home (leaves, roots, whatever you picked)
-        List<Category> allFeatured = categoryRepository.findFeaturedCategoriesCustom();
+    // --- WRITE (Evict Cache) ---
 
-        // 2. Bucket 1: The ones you specifically ordered (e.g., 1, 2, 5)
-        List<Category> ordered = allFeatured.stream()
-                .filter(c -> c.getDisplayOrder() != null)
-                .sorted(Comparator.comparingInt(Category::getDisplayOrder))
-                .collect(Collectors.toList());
-
-        // 3. Bucket 2: The ones you didn't number (Randoms)
-        List<Category> randoms = allFeatured.stream()
-                .filter(c -> c.getDisplayOrder() == null)
-                .collect(Collectors.toList());
-
-        // 4. Shuffle the random bucket to satisfy "arranges by random"
-        Collections.shuffle(randoms);
-
-        // 5. Merge: Ordered first, then Randoms
-        ordered.addAll(randoms);
-
-        return ordered;
+    @CacheEvict(value = "categoryTree", allEntries = true)
+    // ^^^ This wipes the cache whenever you change categories, forcing a rebuild next time.
+    public Category createCategory(Category category) {
+        // ... your creation logic ...
+        return categoryRepository.save(category);
     }
 
+    @CacheEvict(value = "categoryTree", allEntries = true)
+    public Category updateCategory(Category category) {
+        // ... your update logic ...
+        return categoryRepository.save(category);
+    }
 
-
-    private CategoryTreeResponse buildTree(Category category) {
+    private CategoryTreeResponse buildTreeInMemory(Category category, Map<String, List<Category>> childrenMap) {
         CategoryTreeResponse dto = new CategoryTreeResponse();
         dto.setName(category.getName());
         dto.setSlug(category.getSlug());
+        dto.setId(category.getId()); // Helpful for frontend keys
 
-        // Recursive finding of children
-        List<Category> children = categoryRepository.findByParentId(category.getId());
-        dto.setChildren(children.stream().map(this::buildTree).toList());
-
+        List<Category> children = childrenMap.getOrDefault(category.getId(), Collections.emptyList());
+        dto.setChildren(children.stream()
+                .map(child -> buildTreeInMemory(child, childrenMap))
+                .toList());
         return dto;
     }
 }

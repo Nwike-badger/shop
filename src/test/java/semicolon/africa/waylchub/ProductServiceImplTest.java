@@ -1,71 +1,88 @@
 package semicolon.africa.waylchub;
 
-class ProductServiceImplTest {
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import semicolon.africa.waylchub.model.product.Product;
+import semicolon.africa.waylchub.model.product.ProductVariant;
+import semicolon.africa.waylchub.repository.productRepository.ProductRepository;
+import semicolon.africa.waylchub.repository.productRepository.ProductVariantRepository;
+import semicolon.africa.waylchub.service.productService.ProductService;
 
-//    @Mock
-//    private ProductRepository productRepository;
-//
-//    @InjectMocks
-//    private ProductServiceImpl productService;
-//
-//    @BeforeEach
-//    void setup() {
-//        MockitoAnnotations.openMocks(this);
-//    }
-//
-//    @Test
-//    void testCreateProductSuccess() {
-//
-//        CreateProductRequest request = new CreateProductRequest();
-//        request.setName("Samsung Galaxy A55");
-//        request.setDescription("Latest budget-friendly Samsung smartphone.");
-//        request.setCategory("Electronics");
-//        request.setSubCategory("Phones");
-//        request.setTags(List.of("smartphone", "android", "samsung"));
-//        request.setBrand("Samsung");
-//
-//        ProductVariantRequest variant1 = new ProductVariantRequest();
-//        variant1.setSku("SAM-A55-128GB-BLUE");
-//        variant1.setPrice(new BigDecimal("220000"));
-//        variant1.setQuantity(20);
-//        variant1.setAttributes(Map.of("color", "Blue", "memory", "128GB"));
-//        variant1.setImageUrl("https://example.com/images/a55-blue.jpg");
-//
-//        ProductVariantRequest variant2 = new ProductVariantRequest();
-//        variant2.setSku("SAM-A55-256GB-BLACK");
-//        variant2.setPrice(new BigDecimal("250000"));
-//        variant2.setQuantity(15);
-//        variant2.setAttributes(Map.of("color", "Black", "memory", "256GB"));
-//        variant2.setImageUrl("https://example.com/images/a55-black.jpg");
-//
-//        request.setVariants(List.of(variant1, variant2));
-//
-//
-//        when(productRepository.findByNameAndCategory("Samsung Galaxy A55", "Electronics"))
-//                .thenReturn(Optional.empty());
-//        when(productRepository.findByVariants_Sku(anyString()))
-//                .thenReturn(Optional.empty());
-//
-//
-//        ArgumentCaptor<Product> productCaptor = ArgumentCaptor.forClass(Product.class);
-//        when(productRepository.save(productCaptor.capture()))
-//                .thenAnswer(invocation -> invocation.getArgument(0)); // Return same object
-//
-//
-//        ProductResponseDto response = productService.createProduct(request);
-//
-//
-//        assertNotNull(response);
-//        assertEquals("Samsung Galaxy A55", response.getName());
-//        assertEquals(2, response.getVariants().size());
-//
-//
-//        System.out.println("✅ Created Product ID: " + response.getId());
-//        System.out.println("✅ Name: " + response.getName());
-//        System.out.println("✅ Variants: " + response.getVariants().size());
-//
-//
-//        verify(productRepository).save(any(Product.class));
-//    }
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+@SpringBootTest
+class ProductConcurrencyTest {
+
+    @Autowired
+    private ProductService productService;
+
+    @Autowired
+    private ProductVariantRepository variantRepository;
+
+    @Autowired
+    private ProductRepository productRepository; // 🚨 Added to set up and verify the parent Product
+
+    @Test
+    void testAtomicStockReductionUnderLoad() throws InterruptedException {
+
+        // 1. Setup Parent Product
+        Product parentProduct = new Product();
+        parentProduct.setName("Concurrency Test Product");
+        parentProduct.setTotalStock(10); // Set initial parent stock to match variant
+        parentProduct = productRepository.save(parentProduct);
+        String productId = parentProduct.getId();
+
+        // 2. Setup a variant with 10 items
+        ProductVariant variant = new ProductVariant();
+        variant.setProductId(productId); // Link the variant to the parent product
+        variant.setSku("TEST-SKU");
+        variant.setStockQuantity(10);
+        variant = variantRepository.save(variant);
+        String variantId = variant.getId();
+
+        // 3. Simulate 50 people trying to buy 1 item each simultaneously
+        int threadCount = 50;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch latch = new CountDownLatch(threadCount);
+        AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger failureCount = new AtomicInteger(0);
+
+        for (int i = 0; i < threadCount; i++) {
+            executor.submit(() -> {
+                try {
+                    // Note: Ensure your implementation of reduceStockAtomic handles the parent aggregate!
+                    productService.reduceStockAtomic(variantId, 1);
+                    successCount.incrementAndGet();
+                } catch (Exception e) {
+                    failureCount.incrementAndGet();
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        // Wait for all "customers" to finish
+        latch.await();
+
+        // 4. Verify Variant Results
+        ProductVariant updatedVariant = variantRepository.findById(variantId).get();
+        System.out.println("Successes: " + successCount.get()); // Should be exactly 10
+        System.out.println("Failures: " + failureCount.get());  // Should be exactly 40
+
+        assertEquals(10, successCount.get(), "Only 10 purchases should succeed");
+        assertEquals(40, failureCount.get(), "40 purchases should fail due to insufficient stock");
+        assertEquals(0, updatedVariant.getStockQuantity(), "Variant stock should be exactly 0");
+
+        // 🚨 5. NEW: Verify Parent Product Results
+        Product updatedProduct = productRepository.findById(productId).get();
+        System.out.println("Final Parent Stock: " + updatedProduct.getTotalStock()); // Should be 0
+        assertEquals(0, updatedProduct.getTotalStock(), "Parent product total stock must also be 0");
+    }
 }
 

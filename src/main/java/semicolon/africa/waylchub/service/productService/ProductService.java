@@ -1,175 +1,248 @@
 package semicolon.africa.waylchub.service.productService;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.TextCriteria;
+import org.springframework.data.domain.*;
+import org.springframework.data.mongodb.core.*;
+import org.springframework.data.mongodb.core.query.*;
+import org.springframework.data.support.PageableExecutionUtils;
 import org.springframework.stereotype.Service;
-import org.springframework.data.support.PageableExecutionUtils; // ✅ CORRECT IMPORT
-
-import semicolon.africa.waylchub.dto.productDto.ProductFilterRequest;
-import semicolon.africa.waylchub.dto.productDto.ProductRequest;
+import org.springframework.transaction.annotation.Transactional;
+import semicolon.africa.waylchub.dto.productDto.*;
 import semicolon.africa.waylchub.exception.ResourceNotFoundException;
-import semicolon.africa.waylchub.model.product.Category;
-import semicolon.africa.waylchub.model.product.Product;
-import semicolon.africa.waylchub.repository.productRepository.CategoryRepository;
-import semicolon.africa.waylchub.repository.productRepository.ProductRepository;
+import semicolon.africa.waylchub.model.product.*;
+import semicolon.africa.waylchub.repository.productRepository.*;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
 public class ProductService {
 
     private final ProductRepository productRepository;
+    private final ProductVariantRepository variantRepository;
     private final CategoryRepository categoryRepository;
+    private final BrandRepository brandRepository;
     private final MongoTemplate mongoTemplate;
 
-    public Product addOrUpdateProduct(ProductRequest request) {
-        Optional<Product> existingOpt = productRepository.findBySlug(request.getSlug());
-        Product product = existingOpt.orElse(new Product());
+    // =====================================================
+    // CREATE / UPDATE PRODUCT
+    // =====================================================
 
+    @Transactional
+    public Product createOrUpdateProduct(ProductRequest request) {
+        Product product = request.getId() != null ?
+                productRepository.findById(request.getId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Product not found"))
+                : new Product();
+
+        // 1. Basic Fields
         product.setName(request.getName());
         product.setSlug(request.getSlug());
-        product.setSku(request.getSku());
-        product.setPrice(request.getPrice());
+        product.setDescription(request.getDescription());
+        product.setSpecifications(request.getSpecifications());
+        product.setImages(request.getImages());
 
-
-        int currentStock = product.getStockQuantity() == null ? 0 : product.getStockQuantity();
-        int newStock = request.getStockQuantity() == null ? 0 : request.getStockQuantity();
-        product.setStockQuantity(existingOpt.isPresent() ? currentStock + newStock : newStock);
-
-        if (request.getAttributes() != null) {
-            request.getAttributes().forEach(attr ->
-                    product.getAttributes().put(attr.getName(), attr.getValue())
-            );
-        }
-        if (request.getImages() != null) {
-            product.setImages(request.getImages());
-        }
-
+        // 2. Handle Category & Lineage (The Fix)
         if (request.getCategorySlug() != null) {
             Category cat = categoryRepository.findBySlug(request.getCategorySlug())
                     .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
+
             product.setCategory(cat);
             product.setCategoryName(cat.getName());
-            product.setCategorySlug(cat.getSlug());
+
+            // CRITICAL: Save the lineage string directly on the product
+            // e.g., ",101,202,305,"
+            product.setCategoryLineage(cat.getLineage());
+        }
+
+        // 3. Handle Brand
+        if (request.getBrandSlug() != null) {
+            Brand brand = brandRepository.findBySlug(request.getBrandSlug())
+                    .orElseThrow(() -> new ResourceNotFoundException("Brand not found"));
+            product.setBrand(brand);
+            product.setBrandName(brand.getName());
+        }
+
+        // 4. Handle Variants (Map DTO to POJO)
+        if (request.getVariantOptions() != null) {
+            List<VariantOption> options = request.getVariantOptions().entrySet().stream()
+                    .map(entry -> {
+                        VariantOption opt = new VariantOption();
+                        opt.setName(entry.getKey());   // e.g., "Color"
+                        opt.setValues(entry.getValue()); // e.g., ["Red", "Blue"]
+                        return opt;
+                    })
+                    .toList();
+            product.setVariantOptions(options);
         }
 
         return productRepository.save(product);
     }
 
-    public Page<Product> filterProducts(ProductFilterRequest filter, Pageable pageable) {
-        Query query = new Query();
+    // =====================================================
+    // CREATE / UPDATE VARIANT
+    // =====================================================
 
-        if (filter.getKeyword() != null && !filter.getKeyword().isEmpty()) {
-            query.addCriteria(TextCriteria.forDefaultLanguage().matching(filter.getKeyword()));
-        }
+    @Transactional
+    public ProductVariant saveVariant(VariantRequest request) {
 
-        if (filter.getCategorySlug() != null) {
-            Category root = categoryRepository.findBySlug(filter.getCategorySlug())
-                    .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
+        Product product = productRepository.findById(request.getProductId())
+                .orElseThrow(() -> new ResourceNotFoundException("Parent product not found"));
 
-            List<Category> subCategories = categoryRepository.findAllByLineageContaining(root.getId());
-            subCategories.add(root);
+        validateVariantAttributes(product, request.getAttributes());
 
-            query.addCriteria(Criteria.where("category").in(subCategories));
-        }
+        ProductVariant variant = request.getId() != null ?
+                variantRepository.findById(request.getId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Variant not found"))
+                : new ProductVariant();
 
-        if (filter.getMinPrice() != null || filter.getMaxPrice() != null) {
-            Criteria price = Criteria.where("price");
-            if (filter.getMinPrice() != null) price.gte(filter.getMinPrice());
-            if (filter.getMaxPrice() != null) price.lte(filter.getMaxPrice());
-            query.addCriteria(price);
-        }
+        variant.setProductId(product.getId());
+        variant.setSku(request.getSku());
+        variant.setPrice(request.getPrice());
+        variant.setCompareAtPrice(request.getCompareAtPrice());
+        variant.setStockQuantity(request.getStockQuantity());
+        variant.setAttributes(request.getAttributes());
+        variant.setImages(request.getImages());
 
-        if (filter.getAttributes() != null) {
-            filter.getAttributes().forEach((key, value) ->
-                    query.addCriteria(Criteria.where("attributes." + key).is(value))
-            );
-        }
+        ProductVariant saved = variantRepository.save(variant);
 
-        long count = mongoTemplate.count(query, Product.class);
-        List<Product> products = mongoTemplate.find(query.with(pageable), Product.class);
+        updateParentAggregates(product.getId());
 
-
-        return PageableExecutionUtils.getPage(products, pageable, () -> count);
+        return saved;
     }
 
-    public List<Product> getAllProducts() {
-        return productRepository.findAll();
-    }
+    // =====================================================
+    // AGGREGATE UPDATE (Performance Cache)
+    // =====================================================
 
-    public void applyDiscount(String productId, BigDecimal newPrice) {
+    private void updateParentAggregates(String productId) {
+
         Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+                .orElseThrow();
 
-        // Save the old price as "CompareAtPrice" so users see the discount
-        if (product.getCompareAtPrice() == null) {
-            product.setCompareAtPrice(product.getPrice());
+        List<ProductVariant> variants =
+                variantRepository.findByProductId(productId);
+
+        if (variants.isEmpty()) {
+            product.setTotalStock(0);
+            product.setMinPrice(BigDecimal.ZERO);
+            product.setMaxPrice(BigDecimal.ZERO);
+        } else {
+
+            int totalStock = variants.stream()
+                    .filter(ProductVariant::isManageStock)
+                    .mapToInt(v -> v.getStockQuantity() == null ? 0 : v.getStockQuantity())
+                    .sum();
+
+            BigDecimal min = variants.stream()
+                    .map(ProductVariant::getPrice)
+                    .min(BigDecimal::compareTo)
+                    .orElse(BigDecimal.ZERO);
+
+            BigDecimal max = variants.stream()
+                    .map(ProductVariant::getPrice)
+                    .max(BigDecimal::compareTo)
+                    .orElse(BigDecimal.ZERO);
+
+            product.setTotalStock(totalStock);
+            product.setMinPrice(min);
+            product.setMaxPrice(max);
         }
-
-        product.setPrice(newPrice);
-        product.setOnSale(true);
 
         productRepository.save(product);
     }
 
+    // =====================================================
+    // FILTER PRODUCTS (Optimized)
+    // =====================================================
 
-//    public void incrementSalesCount(String productId, int quantitySold) {
-//        // MongoDB "inc" operation is atomic and very fast
-//        Update update = new Update().inc("soldCount", quantitySold);
-//        Query query = new Query(Criteria.where("id").is(productId));
-//        mongoTemplate.updateFirst(query, update, Product.class);
-//    }
+    public Page<Product> filterProducts(ProductFilterRequest filter, Pageable pageable) {
+        Query query = new Query();
 
-    // Inside ReviewService
-    public void addReview(String productId, int starRating, String comment) {
-        // 1. Save the review in 'reviews' collection...
+        // 1. Text Search
+        if (filter.getKeyword() != null && !filter.getKeyword().isBlank()) {
+            query.addCriteria(TextCriteria.forDefaultLanguage().matching(filter.getKeyword()));
+        }
 
-        // 2. Recalculate average for the product
-        // (This keeps reads FAST because we don't calculate averages on every page load)
-        Product p = productRepository.findById(productId).get();
+        // 2. Category Lineage Filter (The Fix)
+        // We no longer query the DBRef. We query the string field directly.
+        if (filter.getCategorySlug() != null) {
+            Category category = categoryRepository.findBySlug(filter.getCategorySlug())
+                    .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
 
-        double newTotal = (p.getAverageRating() * p.getReviewCount()) + starRating;
-        int newCount = p.getReviewCount() + 1;
+            // Matches if product is DIRECTLY in this category OR in a SUB-category
+            // Because lineage looks like ",1,5,9," we can regex for ",5,"
+            query.addCriteria(new Criteria().orOperator(
+                    Criteria.where("category.id").is(category.getId()), // Direct match
+                    Criteria.where("categoryLineage").regex("," + category.getId() + ",") // Child match
+            ));
+        }
 
-        p.setReviewCount(newCount);
-        p.setAverageRating(newTotal / newCount);
+        // 3. Price Range (Using Denormalized Min/Max)
+        if (filter.getMinPrice() != null) {
+            query.addCriteria(Criteria.where("maxPrice").gte(filter.getMinPrice()));
+        }
+        if (filter.getMaxPrice() != null) {
+            query.addCriteria(Criteria.where("minPrice").lte(filter.getMaxPrice()));
+        }
 
-        productRepository.save(p);
+        query.addCriteria(Criteria.where("isActive").is(true));
+
+        List<Product> products = mongoTemplate.find(query.with(pageable), Product.class);
+        long count = mongoTemplate.count(query.skip(-1).limit(-1), Product.class);
+
+        return PageableExecutionUtils.getPage(products, pageable, () -> count);
     }
 
-    public List<Product> getProductsByCategorySlug(String slug) {
-        // 1. Find the root category (e.g., "Mobile Phones")
-        Category root = categoryRepository.findBySlug(slug)
-                .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
+    // =====================================================
+    // ATOMIC STOCK REDUCTION (ORDER SERVICE USE)
+    // =====================================================
 
-        // 2. Collect ALL categories in this branch (Root + Children + Grandchildren)
-        List<Category> categoriesToSearch = new ArrayList<>();
-        collectCategoriesRecursively(root, categoriesToSearch);
+    public void reduceStockAtomic(String variantId, int quantity) {
 
+        Query query = new Query(
+                Criteria.where("id").is(variantId)
+                        .and("stockQuantity").gte(quantity)
+        );
 
-        return productRepository.findByCategoryIn(categoriesToSearch);
-    }
+        Update update = new Update().inc("stockQuantity", -quantity);
 
+        var result = mongoTemplate.updateFirst(
+                query, update, ProductVariant.class);
 
-    private void collectCategoriesRecursively(Category current, List<Category> accumulator) {
-        accumulator.add(current);
-        // Find children of the current category
-        List<Category> children = categoryRepository.findByParentId(current.getId());
-        for (Category child : children) {
-            collectCategoriesRecursively(child, accumulator);
+        if (result.getModifiedCount() == 0) {
+            throw new RuntimeException("Insufficient stock");
         }
     }
 
-    public List<Product> searchProducts(String q) {
-        return productRepository.findByNameContainingIgnoreCase(q);
+    public void addStockAtomic(String variantId, String productId, int quantity) {
+        Query query = new Query(Criteria.where("id").is(variantId));
+        Update update = new Update().inc("stockQuantity", quantity);
+        mongoTemplate.updateFirst(query, update, ProductVariant.class);
+
+        // As you noted, this is mandatory!
+        updateParentAggregates(productId);
+    }
+
+    private void validateVariantAttributes(Product product,
+                                           Map<String, String> attributes) {
+
+        for (Map.Entry<String, String> entry : attributes.entrySet()) {
+
+            VariantOption option = product.getVariantOptions().stream()
+
+                    .filter(o -> o.getName().equalsIgnoreCase(entry.getKey()))
+                    .findFirst()
+                    .orElseThrow(() ->
+                            new IllegalArgumentException(
+                                    "Invalid option: " + entry.getKey()));
+
+            if (!option.getValues().contains(entry.getValue())) {
+                throw new IllegalArgumentException(
+                        "Invalid value '" + entry.getValue()
+                                + "' for option '" + entry.getKey() + "'");
+            }
+        }
     }
 }

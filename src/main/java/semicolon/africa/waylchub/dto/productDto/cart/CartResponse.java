@@ -1,4 +1,4 @@
-package semicolon.africa.waylchub.dto.productDto;
+package semicolon.africa.waylchub.dto.productDto.cart;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

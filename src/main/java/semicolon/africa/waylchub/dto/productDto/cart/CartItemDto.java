@@ -1,4 +1,4 @@
-package semicolon.africa.waylchub.dto.productDto;
+package semicolon.africa.waylchub.dto.productDto.cart;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;

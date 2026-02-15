@@ -12,4 +12,5 @@ public class CategoryRequest {
     private String slug;
 
     private String parentSlug; // Optional: if null, it's a root category
+    private String description;
 }

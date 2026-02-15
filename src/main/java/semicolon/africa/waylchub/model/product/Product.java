@@ -1,26 +1,28 @@
 package semicolon.africa.waylchub.model.product;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
-import org.springframework.data.annotation.*; // Import for Auditing and Version
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.mapping.DBRef;
-import org.springframework.data.mongodb.core.mapping.Document;
+import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.*;
+import org.springframework.data.mongodb.core.index.*;
+import org.springframework.data.mongodb.core.mapping.*;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @Document(collection = "products")
 @CompoundIndexes({
-        @CompoundIndex(name = "category_price", def = "{'category': 1, 'price': 1}"),
-        @CompoundIndex(name = "name_text", def = "{'name': 'text', 'description': 'text'}"),
-        @CompoundIndex(name = "popularity", def = "{'soldCount': -1}") // NEW: For "Best Sellers"
+        // This index requires the 'categorySlug' field to exist below!
+        @CompoundIndex(name = "category_price", def = "{'categorySlug': 1, 'minPrice': 1}"),
+        // This index requires 'categoryLineage'
+        @CompoundIndex(name = "lineage_price", def = "{'categoryLineage': 1, 'minPrice': 1}"),
+        @CompoundIndex(name = "text_search", def = "{'name': 'text', 'description': 'text', 'brandName': 'text'}")
 })
 public class Product {
 
@@ -28,52 +30,53 @@ public class Product {
     private String id;
 
     @Indexed(unique = true)
-    private String name;
-
-    @Indexed(unique = true)
     private String slug;
 
-    @Indexed(unique = true)
-    private String sku;
+    @Indexed
+    private String name;
+    private String description;
 
-    // --- PRICING & PROMOS ---
-    // The current selling price (used for cart)
-    private BigDecimal price;
+    // --- DENORMALIZED FIELDS (These were missing!) ---
+    // These allow us to filter without doing a slow $lookup or joining the DBRef
+    @Indexed
+    private String categorySlug;
 
-    // The "Strikethrough" price (e.g., was 5000, now 4000).
-    // If this is not null and > price, frontend shows "On Sale"
-    private BigDecimal compareAtPrice;
+    @Indexed
+    private String categoryLineage; // e.g., ",rootId,subId,catId,"
 
-    // Helps you quickly find all items on discount
-    private boolean isOnSale = false;
+    private String categoryName;
+    private String brandName;
 
-    // --- INVENTORY ---
-    private Integer stockQuantity;
-    private Integer lowStockThreshold = 5; // Alert admin when stock hits this
-
-    // --- ANALYTICS (For "Most Sold" & "Top Rated") ---
-    // Updated by a background job or event whenever an order is completed
-    private Long soldCount = 0L;
-
-    // Updated whenever a new Review is added
-    private Double averageRating = 0.0;
-    private Integer reviewCount = 0;
-
+    // --- RELATIONSHIPS ---
     @DBRef
     private Category category;
+
+    @DBRef
     private Brand brand;
 
-    // Denormalized fields
-    private String categoryName;
-    private String categorySlug;
-    private String brandName;
-    private Map<String, String> attributes = new HashMap<>();
+    // --- PRICING & STOCK ---
+    private BigDecimal basePrice; // Represents the "From" price
+    private BigDecimal minPrice;
+    private BigDecimal maxPrice;
+    private BigDecimal compareAtPrice;
+    private Integer totalStock; // 0 = Sold Out
 
-    private List<ProductImage> images = new ArrayList<>();
-
+    // --- CONFIGURATION ---
     private boolean isActive = true;
 
+    @Builder.Default
+    private Map<String, String> specifications = new HashMap<>();
 
+    @Builder.Default
+    private List<VariantOption> variantOptions = new ArrayList<>();
+
+    @Builder.Default
+    private List<ProductImage> images = new ArrayList<>();
+
+    // --- ANALYTICS ---
+    private Long soldCount = 0L;
+    private Double averageRating = 0.0;
+    private Integer reviewCount = 0;
 
     @CreatedDate
     private Instant createdAt;
@@ -82,6 +85,5 @@ public class Product {
     private Instant updatedAt;
 
     @Version
-    private Long version; // PREVENTS OVERWRITES.
-    // If two admins edit this product at the same time, the second one fails safely.
+    private Long version;
 }

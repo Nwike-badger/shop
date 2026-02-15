@@ -5,28 +5,33 @@ import lombok.Data;
 import semicolon.africa.waylchub.model.product.ProductImage;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Data
 public class ProductRequest {
+
+    private String id; // Null for new, Present for update
+
     @NotNull(message = "Product name is required")
     private String name;
 
     @NotNull(message = "Slug is required")
     private String slug;
 
-    @NotNull(message = "Price is required")
-    private BigDecimal price;
+    @NotNull(message = "Base price is required")
+    private BigDecimal basePrice; // Display price "From N5,000"
 
-    private Integer stockQuantity;
+    private String description;
+    private Boolean isActive = true;
 
-    // We send Slugs from frontend, Service converts to DBRef
+    // Static specs: {"Material": "Cotton", "Warranty": "1 Year"}
+    private Map<String, String> specifications = new HashMap<>();
+
+    // DEFINITIONS: {"Size": ["S", "M", "L"], "Color": ["Red", "Blue"]}
+    private Map<String, List<String>> variantOptions = new HashMap<>();
+
+    private List<ProductImage> images = new ArrayList<>();
+
     private String categorySlug;
     private String brandSlug;
-    private String sku;
-
-    private List<ProductAttributeRequest> attributes;
-    private List<ProductImage> images = new ArrayList<>();
 }
