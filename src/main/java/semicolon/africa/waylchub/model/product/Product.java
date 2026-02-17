@@ -18,9 +18,9 @@ import java.util.*;
 @AllArgsConstructor
 @Document(collection = "products")
 @CompoundIndexes({
-        // This index requires the 'categorySlug' field to exist below!
+
         @CompoundIndex(name = "category_price", def = "{'categorySlug': 1, 'minPrice': 1}"),
-        // This index requires 'categoryLineage'
+
         @CompoundIndex(name = "lineage_price", def = "{'categoryLineage': 1, 'minPrice': 1}"),
         @CompoundIndex(name = "text_search", def = "{'name': 'text', 'description': 'text', 'brandName': 'text'}")
 })
@@ -36,13 +36,12 @@ public class Product {
     private String name;
     private String description;
 
-    // --- DENORMALIZED FIELDS (These were missing!) ---
-    // These allow us to filter without doing a slow $lookup or joining the DBRef
+
     @Indexed
     private String categorySlug;
 
     @Indexed
-    private String categoryLineage; // e.g., ",rootId,subId,catId,"
+    private String categoryLineage;
 
     private String categoryName;
     private String brandName;
@@ -59,7 +58,9 @@ public class Product {
     private BigDecimal minPrice;
     private BigDecimal maxPrice;
     private BigDecimal compareAtPrice;
-    private Integer totalStock; // 0 = Sold Out
+    private Integer totalStock;
+    @Builder.Default
+    private Integer discount = 0;
 
     // --- CONFIGURATION ---
     private boolean isActive = true;

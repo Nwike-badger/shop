@@ -130,6 +130,19 @@ class CategoryServiceTest {
                 .isInstanceOf(DuplicateKeyException.class);
     }
 
+    @Test
+    @Order(6)
+    @DisplayName("✅ 6. Lineage Filtering - Materialized path formats correctly")
+    void testLineageFormatting() {
+        Category parent = createCategory("Electronics", "electronics", null);
+        Category child = createCategory("Phones", "phones", "electronics");
+        Category grandchild = createCategory("Android", "android", "phones");
+
+        // The lineage pattern is crucial for regex searching: ,parent_id,
+        assertThat(child.getLineage()).isEqualTo("," + parent.getId() + ",");
+        assertThat(grandchild.getLineage()).isEqualTo("," + parent.getId() + "," + child.getId() + ",");
+    }
+
 
     private Category createCategory(String name, String slug, String parentSlug) {
         Category category = new Category();
@@ -150,6 +163,6 @@ class CategoryServiceTest {
 
         // CRITICAL CHANGE: Calling the Service method triggers @CacheEvict
         // Calling repository.save() directly bypasses the cache logic!
-        return categoryService.createCategory(category);
+        return categoryService.createCategory(null);
     }
 }

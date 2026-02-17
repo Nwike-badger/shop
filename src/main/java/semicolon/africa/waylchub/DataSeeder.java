@@ -2,6 +2,8 @@ package semicolon.africa.waylchub;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.index.TextIndexDefinition;
 import org.springframework.stereotype.Component;
 import semicolon.africa.waylchub.dto.productDto.ProductRequest;
 import semicolon.africa.waylchub.dto.productDto.VariantRequest;
@@ -27,6 +29,7 @@ public class DataSeeder implements CommandLineRunner {
     private final ProductRepository productRepo;
     private final ProductVariantRepository variantRepo;
     private final ProductService productService;
+    private final MongoTemplate mongoTemplate;
 
     private final Random random = new Random();
 
@@ -34,13 +37,31 @@ public class DataSeeder implements CommandLineRunner {
     public void run(String... args) {
         System.out.println("🌱 STARTING PRODUCTION-GRADE SEEDER...");
 
-        // 1. WIPE DATA
+        try {
+            mongoTemplate.indexOps(Product.class).ensureIndex(
+                    new TextIndexDefinition.TextIndexDefinitionBuilder()
+                            .onField("name")
+                            .onField("description")
+                            .onField("brandName")
+                            .named("text_search")
+                            .build()
+            );
+        } catch (Exception e) {
+            System.out.println("⚠️ Index creation warning: " + e.getMessage());
+        }
+
         variantRepo.deleteAll();
         productRepo.deleteAll();
         categoryRepo.deleteAll();
         brandRepo.deleteAll();
 
-        // 2. CREATE BRANDS
+        createBrands();
+        createCategoriesAndProducts();
+
+        System.out.println("✅ SEEDING COMPLETE! You now have data for all sections.");
+    }
+
+    private void createBrands() {
         List<String> brands = List.of("Apple", "Samsung", "Oraimo", "Nike", "Adidas", "Lagos-Tailors", "Dangote", "Binatone");
         for (String b : brands) {
             Brand brand = new Brand();
@@ -48,131 +69,101 @@ public class DataSeeder implements CommandLineRunner {
             brand.setSlug(b.toLowerCase());
             brandRepo.save(brand);
         }
-
-        // 3. CREATE CATEGORY TREE
-        // Root: Electronics
-        Category electronics = saveCat("Electronics", "electronics", null, "img-elec.jpg");
-        Category phones = saveCat("Phones & Tablets", "phones-tablets", electronics, "img-phone.jpg");
-        Category iphones = saveCat("iPhones", "iphones", phones, "img-iphone.jpg");
-        Category android = saveCat("Android", "android-phones", phones, "img-android.jpg");
-        Category audio = saveCat("Audio", "audio", electronics, "img-audio.jpg");
-
-        // Root: Fashion
-        Category fashion = saveCat("Fashion", "fashion", null, "img-fashion.jpg");
-        Category men = saveCat("Men", "men-fashion", fashion, "img-men.jpg");
-        Category menShoes = saveCat("Sneakers", "men-sneakers", men, "img-sneaker.jpg");
-        Category nativeWear = saveCat("Native Wear", "native-wear", men, "img-native.jpg");
-
-        // 4. CREATE PRODUCTS
-
-        // SCENARIO A: Complex Tech Product (iPhone 15 - Variants: Color + Storage)
-        createComplexProduct(
-                "iPhone 15 Pro Max", "iphone-15-pro-max", iphones, "apple",
-                new BigDecimal("1800000"),
-                Map.of("Color", List.of("Titanium", "Blue"), "Storage", List.of("256GB", "512GB")),
-                List.of(
-                        // Variant 1
-                        new VariantConfig("SKU-IP15-TI-256", new BigDecimal("1800000"), 10, Map.of("Color", "Titanium", "Storage", "256GB")),
-                        // Variant 2
-                        new VariantConfig("SKU-IP15-BL-256", new BigDecimal("1800000"), 5, Map.of("Color", "Blue", "Storage", "256GB")),
-                        // Variant 3 (Higher Price)
-                        new VariantConfig("SKU-IP15-TI-512", new BigDecimal("2100000"), 3, Map.of("Color", "Titanium", "Storage", "512GB"))
-                )
-        );
-
-        // SCENARIO B: Fashion Product (Sneakers - Variants: Size)
-        createComplexProduct(
-                "Adidas Ultraboost", "adidas-ultraboost", menShoes, "adidas",
-                new BigDecimal("120000"),
-                Map.of("Size", List.of("42", "43", "44", "45")),
-                List.of(
-                        new VariantConfig("SKU-AD-42", new BigDecimal("120000"), 5, Map.of("Size", "42")),
-                        new VariantConfig("SKU-AD-43", new BigDecimal("120000"), 0, Map.of("Size", "43")), // Out of stock test
-                        new VariantConfig("SKU-AD-44", new BigDecimal("120000"), 2, Map.of("Size", "44"))
-                )
-        );
-
-        // SCENARIO C: Simple Product (Native Wear - Just one "Default" variant implied or explicit)
-        createComplexProduct(
-                "Senator Suit - Navy Blue", "senator-blue", nativeWear, "lagos-tailors",
-                new BigDecimal("45000"),
-                Map.of("Size", List.of("L", "XL")),
-                List.of(
-                        new VariantConfig("SKU-SEN-L", new BigDecimal("45000"), 20, Map.of("Size", "L")),
-                        new VariantConfig("SKU-SEN-XL", new BigDecimal("45000"), 15, Map.of("Size", "XL"))
-                )
-        );
-
-        // SCENARIO D: Accessories (Simple, no variations really, but mapped as 1 variant)
-        createComplexProduct(
-                "Oraimo Freepods 4", "oraimo-freepods-4", audio, "oraimo",
-                new BigDecimal("28000"),
-                Map.of("Color", List.of("Black")),
-                List.of(new VariantConfig("SKU-ORA-BLK", new BigDecimal("28000"), 100, Map.of("Color", "Black")))
-        );
-
-        System.out.println("✅ SEEDING COMPLETE! Front-end ready.");
     }
 
-    // ================= HELPER METHODS =================
+    private void createCategoriesAndProducts() {
+        // --- Categories ---
+        Category electronics = saveCat("Electronics", "electronics", null, "https://images.unsplash.com/photo-1498049860654-af5a11528db3?auto=format&fit=crop&w=600&q=80");
+        Category fashion = saveCat("Fashion", "fashion", null, "https://images.unsplash.com/photo-1445205170230-05328324f375?auto=format&fit=crop&w=600&q=80");
+        Category home = saveCat("Home & Living", "home-living", null, "https://images.unsplash.com/photo-1484101403633-562f891dc89a?auto=format&fit=crop&w=600&q=80");
 
-    private void createComplexProduct(
-            String name, String slug, Category cat, String brandSlug,
-            BigDecimal basePrice,
-            Map<String, List<String>> options,
-            List<VariantConfig> variantConfigs
-    ) {
-        // 1. Create Parent Product
+        Category phones = saveCat("Phones", "phones", electronics, null);
+        Category men = saveCat("Men", "men-fashion", fashion, null);
+        Category kitchen = saveCat("Kitchen", "kitchen", home, null);
+
+        // --- SPECIFIC HIGH QUALITY PRODUCTS (Your existing ones) ---
+        createComplexProduct(
+                "iPhone 15 Pro Max", "iphone-15-pro-max", phones, "apple",
+                new BigDecimal("1800000"),
+                Map.of("Color", List.of("Titanium")),
+                List.of(new VariantConfig("IP15-TI", new BigDecimal("1800000"), 10, Map.of("Color", "Titanium")))
+        );
+
+        createComplexProduct(
+                "Nike Air Max 2025", "nike-air-max-2025", men, "nike",
+                new BigDecimal("150000"),
+                Map.of("Size", List.of("42", "43")),
+                List.of(new VariantConfig("NK-42", new BigDecimal("150000"), 5, Map.of("Size", "42")))
+        );
+
+        // --- 🔥 THE FIX: GENERATE 35 FILLER PRODUCTS ---
+        // This ensures indices 6-12 (Top Trends) and 12-22 (Explore) are filled
+        generateFillerProducts(List.of(electronics, fashion, home, phones, men, kitchen));
+    }
+
+    private void generateFillerProducts(List<Category> categories) {
+        String[] adjectives = {"Premium", "Luxury", "Durable", "Sleek", "Modern", "Classic", "Urban"};
+        String[] nouns = {"Gadget", "Accessory", "Tool", "Device", "Outfit", "Kit"};
+
+        for (int i = 1; i <= 35; i++) {
+            Category randomCat = categories.get(random.nextInt(categories.size()));
+            String name = adjectives[random.nextInt(adjectives.length)] + " " + nouns[random.nextInt(nouns.length)] + " " + i;
+
+            ProductRequest req = new ProductRequest();
+            req.setName(name);
+            req.setSlug("gen-item-" + i + "-" + System.currentTimeMillis());
+            req.setBasePrice(new BigDecimal(random.nextInt(45000) + 5000)); // Price between 5k and 50k
+            req.setCategorySlug(randomCat.getSlug());
+            req.setBrandSlug("apple");
+            req.setDescription("This is a generated product to fill the store layout.");
+
+            // Random Unsplash Image
+            req.setImages(List.of(new ProductImage("https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=400&q=80", true)));
+
+            // Randomly apply discount
+            if(random.nextBoolean()) {
+                req.setDiscount(new BigDecimal(random.nextInt(20) + 5)); // 5% to 25% discount
+            }
+
+            productService.createOrUpdateProduct(req);
+        }
+        System.out.println("⚡ Generated 35 filler products.");
+    }
+
+    // --- Helpers ---
+    private Category saveCat(String name, String slug, Category parent, String img) {
+        Category c = new Category();
+        c.setName(name);
+        c.setSlug(slug);
+        c.setParent(parent);
+        c.setImageUrl(img == null ? "https://placehold.co/600x400" : img);
+        c.setLineage(parent != null ? (parent.getLineage() == null ? "," : parent.getLineage()) + parent.getId() + "," : ",");
+        return categoryRepo.save(c);
+    }
+
+    private void createComplexProduct(String name, String slug, Category cat, String brandSlug, BigDecimal basePrice, Map<String, List<String>> options, List<VariantConfig> configs) {
         ProductRequest req = new ProductRequest();
         req.setName(name);
         req.setSlug(slug);
         req.setBasePrice(basePrice);
         req.setCategorySlug(cat.getSlug());
         req.setBrandSlug(brandSlug);
-        req.setDescription("Premium quality " + name + ". Durable and authentic.");
-        req.setImages(List.of(new ProductImage("https://placehold.co/400?text=" + name.replaceAll(" ", "+"), true)));
-
-        // Map definitions (e.g., Color: [Red, Blue])
+        req.setDescription("Description for " + name);
+        req.setImages(List.of(new ProductImage("https://placehold.co/400", true)));
         req.setVariantOptions(options);
+        Product p = productService.createOrUpdateProduct(req);
 
-        // Save Parent (This triggers lineage calculation)
-        Product savedProduct = productService.createOrUpdateProduct(req);
-
-        // 2. Create Variants
-        for (VariantConfig config : variantConfigs) {
-            VariantRequest vReq = new VariantRequest();
-            vReq.setProductId(savedProduct.getId());
-            vReq.setSku(config.sku);
-            vReq.setPrice(config.price);
-            vReq.setStockQuantity(config.stock);
-            vReq.setAttributes(config.attributes);
-
-            // Generate variant image
-            vReq.setImages(List.of(new ProductImage("https://placehold.co/400?text=Variant", true)));
-
-            productService.saveVariant(vReq);
+        for (VariantConfig c : configs) {
+            VariantRequest v = new VariantRequest();
+            v.setProductId(p.getId());
+            v.setSku(c.sku);
+            v.setPrice(c.price);
+            v.setStockQuantity(c.stock);
+            v.setAttributes(c.attributes);
+            v.setImages(List.of(new ProductImage("https://placehold.co/400", true)));
+            productService.saveVariant(v);
         }
     }
 
-    private Category saveCat(String name, String slug, Category parent, String img) {
-        Category c = new Category();
-        c.setName(name);
-        c.setSlug(slug);
-        c.setParent(parent);
-        c.setImageUrl("https://placehold.co/400?text=" + slug);
-        c.setFeatured(true);
-        c.setDisplayOrder(1);
-
-        // Manual lineage logic for seeder (Service handles this usually, but good to be explicit here)
-        if (parent != null) {
-            String parentLineage = parent.getLineage() == null ? "," : parent.getLineage();
-            c.setLineage(parentLineage + parent.getId() + ",");
-        } else {
-            c.setLineage(",");
-        }
-        return categoryRepo.save(c);
-    }
-
-    // Simple inner class to hold variant data for the loop
     private record VariantConfig(String sku, BigDecimal price, int stock, Map<String, String> attributes) {}
 }

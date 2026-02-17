@@ -1,12 +1,13 @@
 package semicolon.africa.waylchub.model.product;
 
-import lombok.*; // Import all
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import lombok.*;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.DBRef;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-@Getter // Use Getter/Setter instead of @Data for safer control
+@Getter
 @Setter
 @Builder
 @NoArgsConstructor
@@ -26,10 +27,12 @@ public class Category {
     private String description;
     private String imageUrl;
 
-    // Self-referencing parent
-    @DBRef(lazy = true)
-    @ToString.Exclude          // <--- ADD THIS TO PREVENT CRASHES
-    @EqualsAndHashCode.Exclude // <--- ADD THIS TO PREVENT CRASHES
+
+
+    @DBRef
+    @JsonIgnore
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private Category parent;
 
     @Indexed

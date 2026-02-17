@@ -20,9 +20,12 @@ public class ProductRequest {
 
     @NotNull(message = "Base price is required")
     private BigDecimal basePrice; // Display price "From N5,000"
+    private BigDecimal compareAtPrice;
+    private BigDecimal discount;
 
     private String description;
     private Boolean isActive = true;
+
 
     // Static specs: {"Material": "Cotton", "Warranty": "1 Year"}
     private Map<String, String> specifications = new HashMap<>();
