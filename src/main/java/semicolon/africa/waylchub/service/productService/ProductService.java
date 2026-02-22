@@ -294,6 +294,12 @@ public class ProductService {
         ));
     }
 
+    // Add this method to fetch multiple parent products in one query
+    public List<Product> getProductsByIds(Collection<String> ids) {
+        Query query = new Query(Criteria.where("id").in(ids));
+        return mongoTemplate.find(query, Product.class);
+    }
+
     /**
      * Made public so StockChangeEventListener can call it.
      * Should only be called by the listener or admin-level operations (like applyDiscount).

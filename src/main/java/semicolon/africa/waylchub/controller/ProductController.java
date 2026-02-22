@@ -62,10 +62,18 @@ public class ProductController {
     }
 
     @GetMapping("/category/{slug}")
-    public ResponseEntity<List<ProductResponse>> getByCategory(@PathVariable String slug) {
-        // Uses the new adapter in service
-        return ResponseEntity.ok(productService.getProductsByCategorySlug(slug)
-                .stream().map(this::mapToResponse).collect(Collectors.toList()));
+    public ResponseEntity<Page<ProductResponse>> getByCategory(
+            @PathVariable String slug,
+            Pageable pageable
+    ) {
+
+        Page<Product> productPage =
+                productService.getProductsByCategorySlug(slug, pageable);
+
+        Page<ProductResponse> responsePage =
+                productPage.map(this::mapToResponse);
+
+        return ResponseEntity.ok(responsePage);
     }
 
     @GetMapping

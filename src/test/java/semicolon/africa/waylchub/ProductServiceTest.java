@@ -16,6 +16,10 @@ import semicolon.africa.waylchub.repository.productRepository.ProductRepository;
 import semicolon.africa.waylchub.repository.productRepository.ProductVariantRepository;
 import semicolon.africa.waylchub.service.productService.ProductService;
 
+// ✅ Import Awaitility
+import org.awaitility.Awaitility;
+import java.time.Duration;
+
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -66,13 +70,12 @@ class ProductServiceTest {
         ProductRequest request = new ProductRequest();
         request.setName("Nike Air Max");
         request.setSlug("nike-air-max");
-        request.setBasePrice(BigDecimal.valueOf(100.00)); // $100 Original
+        request.setBasePrice(BigDecimal.valueOf(100.00));
         BigDecimal twenty = new BigDecimal("20");
-        request.setDiscount(twenty); // 20% Off
+        request.setDiscount(twenty);
 
         Product saved = productService.createOrUpdateProduct(request);
 
-        // Expected: BasePrice = 80, CompareAt = 100, Discount = 20
         assertThat(saved.getBasePrice()).isEqualByComparingTo(BigDecimal.valueOf(80.00));
         assertThat(saved.getCompareAtPrice()).isEqualByComparingTo(BigDecimal.valueOf(100.00));
         assertThat(saved.getDiscount()).isEqualTo(20);
@@ -83,18 +86,15 @@ class ProductServiceTest {
     // ==============================================
     @Test
     @Order(2)
-    @DisplayName("✅ 2. Variant Aggregation (Min/Max Price & Total Stock)")
+    @DisplayName("✅ 2. Variant Aggregation (Async Event Test)")
     void testVariantAggregation() {
-        // 1. Create Parent
         ProductRequest pReq = new ProductRequest();
         pReq.setName("T-Shirt");
         pReq.setSlug("t-shirt");
         pReq.setBasePrice(BigDecimal.valueOf(10));
-        // Define allowed options
         pReq.setVariantOptions(Map.of("Size", List.of("S", "M", "L")));
         Product parent = productService.createOrUpdateProduct(pReq);
 
-        // 2. Add Variant 1 (Small, $10, Stock 5)
         VariantRequest v1 = new VariantRequest();
         v1.setProductId(parent.getId());
         v1.setSku("TEE-S");
@@ -103,7 +103,6 @@ class ProductServiceTest {
         v1.setAttributes(Map.of("Size", "S"));
         productService.saveVariant(v1);
 
-        // 3. Add Variant 2 (Medium, $20, Stock 10)
         VariantRequest v2 = new VariantRequest();
         v2.setProductId(parent.getId());
         v2.setSku("TEE-M");
@@ -112,12 +111,15 @@ class ProductServiceTest {
         v2.setAttributes(Map.of("Size", "M"));
         productService.saveVariant(v2);
 
-        // 4. Verify Parent Aggregates
-        Product updatedParent = productService.getProductById(parent.getId());
-
-        assertThat(updatedParent.getTotalStock()).isEqualTo(15); // 5 + 10
-        assertThat(updatedParent.getMinPrice()).isEqualByComparingTo(BigDecimal.valueOf(10.00));
-        assertThat(updatedParent.getMaxPrice()).isEqualByComparingTo(BigDecimal.valueOf(20.00));
+        // ✅ FIX: Use Awaitility to wait for the async event listener to finish updating the parent
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> {
+                    Product updatedParent = productService.getProductById(parent.getId());
+                    assertThat(updatedParent.getTotalStock()).isEqualTo(15);
+                    assertThat(updatedParent.getMinPrice()).isEqualByComparingTo(BigDecimal.valueOf(10.00));
+                    assertThat(updatedParent.getMaxPrice()).isEqualByComparingTo(BigDecimal.valueOf(20.00));
+                });
     }
 
     // ==============================================
@@ -127,7 +129,6 @@ class ProductServiceTest {
     @Order(3)
     @DisplayName("🛑 3. Prevent Invalid Variant Attributes")
     void testInvalidVariantAttributes() {
-        // Parent only allows "Size": ["S", "M"]
         ProductRequest pReq = new ProductRequest();
         pReq.setName("Hoodie");
         pReq.setSlug("hoodie");
@@ -135,7 +136,6 @@ class ProductServiceTest {
         pReq.setVariantOptions(Map.of("Size", List.of("S", "M")));
         Product parent = productService.createOrUpdateProduct(pReq);
 
-        // Try adding "Size": "XL" (Not allowed)
         VariantRequest v1 = new VariantRequest();
         v1.setProductId(parent.getId());
         v1.setSku("HOODIE-XL");
@@ -154,14 +154,12 @@ class ProductServiceTest {
     @Order(4)
     @DisplayName("⚡ 4. Atomic Stock Reduction (Concurrency Test)")
     void testAtomicStock() throws InterruptedException {
-        // 1. Create a REAL Parent Product
         ProductRequest pReq = new ProductRequest();
         pReq.setName("Stock Parent");
         pReq.setSlug("stock-parent");
         pReq.setBasePrice(BigDecimal.TEN);
         Product parent = productService.createOrUpdateProduct(pReq);
 
-        // 2. Setup: Variant with 10 items linked to REAL parent
         ProductVariant variant = new ProductVariant();
         variant.setProductId(parent.getId());
         variant.setSku("ATOMIC-TEST");
@@ -170,7 +168,6 @@ class ProductServiceTest {
         variant.setManageStock(true);
         variantRepository.save(variant);
 
-        // 3. Concurrency simulation
         int numberOfThreads = 20;
         ExecutorService executorService = Executors.newFixedThreadPool(numberOfThreads);
         CountDownLatch latch = new CountDownLatch(numberOfThreads);
@@ -192,13 +189,22 @@ class ProductServiceTest {
 
         latch.await();
 
-        // With the fix in Service (try-catch), we expect 10 successes
         assertThat(successCount.get()).isEqualTo(10);
         assertThat(failCount.get()).isEqualTo(10);
 
+        // ✅ Check variant stock is zero
         ProductVariant finalVariant = variantRepository.findById(variant.getId()).get();
         assertThat(finalVariant.getStockQuantity()).isEqualTo(0);
+
+        // ✅ FIX: Use Awaitility to verify the parent was updated by the events
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> {
+                    Product updatedParent = productService.getProductById(parent.getId());
+                    assertThat(updatedParent.getTotalStock()).isEqualTo(0);
+                });
     }
+
     // ==============================================
     // TEST 5: DELETION CASCADING
     // ==============================================
@@ -218,24 +224,20 @@ class ProductServiceTest {
         v1.setPrice(BigDecimal.TEN);
         productService.saveVariant(v1);
 
-        // Delete Parent
         productService.deleteProduct(parent.getId());
 
-        // Assert Parent is gone
         assertThat(productRepository.findById(parent.getId())).isEmpty();
-
-        // Assert Variant is gone (Cascade worked)
         List<ProductVariant> variants = variantRepository.findByProductId(parent.getId());
         assertThat(variants).isEmpty();
     }
 
-    // ... inside ProductServiceTest.java ...
-
+    // ==============================================
+    // TEST 6: DEACTIVATION LOGIC
+    // ==============================================
     @Test
     @Order(6)
-    @DisplayName("🚫 14. Deactivating Product Hides It From Search")
+    @DisplayName("🚫 6. Deactivating Product Hides It From Search")
     void testDeactivationLogic() {
-        // 1. Create Active Product
         ProductRequest activeReq = new ProductRequest();
         activeReq.setName("Visible Phone");
         activeReq.setSlug("visible-phone");
@@ -243,18 +245,15 @@ class ProductServiceTest {
         activeReq.setIsActive(true);
         productService.createOrUpdateProduct(activeReq);
 
-        // 2. Create Inactive Product
         ProductRequest inactiveReq = new ProductRequest();
         inactiveReq.setName("Hidden Phone");
         inactiveReq.setSlug("hidden-phone");
         inactiveReq.setBasePrice(BigDecimal.TEN);
-        inactiveReq.setIsActive(false); // This will map to model.isActive = false
+        inactiveReq.setIsActive(false);
         productService.createOrUpdateProduct(inactiveReq);
 
-        // 3. Search for "Phone"
         List<Product> results = productService.searchProducts("Phone");
 
-        // 4. Verify only the active one is returned
         assertThat(results).hasSize(1);
         assertThat(results.get(0).getSlug()).isEqualTo("visible-phone");
     }

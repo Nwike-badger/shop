@@ -21,6 +21,10 @@ import semicolon.africa.waylchub.repository.productRepository.ProductVariantRepo
 import semicolon.africa.waylchub.service.productService.CategoryService;
 import semicolon.africa.waylchub.service.productService.ProductService;
 
+// ✅ Import Awaitility
+import org.awaitility.Awaitility;
+import java.time.Duration;
+
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -75,13 +79,16 @@ class ProductLogicTest {
         // 3. Add Expensive Variant ($100)
         createVariant(parent.getId(), "V-HIGH", BigDecimal.valueOf(100), 5);
 
-        // 4. Verify Parent Aggregates
-        Product updated = productService.getProductById(parent.getId());
-
-        // Min should be lowest variant ($10)
-        assertThat(updated.getMinPrice()).isEqualByComparingTo(BigDecimal.valueOf(10));
-        // Max should be highest variant ($100)
-        assertThat(updated.getMaxPrice()).isEqualByComparingTo(BigDecimal.valueOf(100));
+        // 4. Verify Parent Aggregates (✅ Wrapped in Awaitility)
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> {
+                    Product updated = productService.getProductById(parent.getId());
+                    // Min should be lowest variant ($10)
+                    assertThat(updated.getMinPrice()).isEqualByComparingTo(BigDecimal.valueOf(10));
+                    // Max should be highest variant ($100)
+                    assertThat(updated.getMaxPrice()).isEqualByComparingTo(BigDecimal.valueOf(100));
+                });
     }
 
     @Test
@@ -95,10 +102,14 @@ class ProductLogicTest {
         createVariant(parent.getId(), "S-2", BigDecimal.TEN, 10);
         createVariant(parent.getId(), "S-3", BigDecimal.TEN, 10);
 
-        Product updated = productService.getProductById(parent.getId());
-
-        // Total should be 30
-        assertThat(updated.getTotalStock()).isEqualTo(30);
+        // ✅ Wrapped in Awaitility to allow the event to process
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> {
+                    Product updated = productService.getProductById(parent.getId());
+                    // Total should be 30
+                    assertThat(updated.getTotalStock()).isEqualTo(30);
+                });
     }
 
     @Test
