@@ -1,5 +1,7 @@
 package semicolon.africa.waylchub.model.product;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -30,6 +32,7 @@ public class Product {
     private String id;
 
     @Indexed(unique = true)
+    @NotBlank(message = "Slug is required")
     private String slug;
 
     @Indexed
@@ -53,13 +56,14 @@ public class Product {
     @DBRef
     private Brand brand;
 
-    // --- PRICING & STOCK ---
+    @Min(value = 0, message = "Base price cannot be negative")
     private BigDecimal basePrice; // Represents the "From" price
     private BigDecimal minPrice;
     private BigDecimal maxPrice;
     private BigDecimal compareAtPrice;
     private Integer totalStock;
     @Builder.Default
+    @Min(value = 0, message = "Discount cannot be negative")
     private Integer discount = 0;
 
     // --- CONFIGURATION ---
