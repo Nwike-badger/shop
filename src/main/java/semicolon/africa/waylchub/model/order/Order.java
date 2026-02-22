@@ -1,55 +1,76 @@
 package semicolon.africa.waylchub.model.order;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
+import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.annotation.Version;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
-import semicolon.africa.waylchub.model.product.Address;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
-@Data
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @Document(collection = "orders")
 public class Order {
+
     @Id
     private String id;
-    private String customerEmail;
-    private String userId;
-    private List<OrderItem> items;
-    private BigDecimal totalAmount;
-    private String status; // PENDING, SUCCESS, CANCELLED
-    private LocalDateTime createdAt = LocalDateTime.now();
-}
 
-//@Document(collection = "orders")
-//@Data
-//@AllArgsConstructor
-//@NoArgsConstructor
-//@Builder
-//public class Order {
-//    @Id
-//    private String id;
-//    private String userId; // ID of the user who placed the order
-//
-//    private List<OrderItem> items; // List of products ordered
-//    private Address shippingAddress; // Shipping address for this specific order
-//    private String paymentMethod; // e.g., "card", "cash_on_delivery"
-//
-//    // --- New fields for Payment Gateway Integration ---
-//    private PaymentDetails paymentDetails; // Nested object to hold card details (for mock) or gateway response
-//    private PaymentStatus paymentStatus; // e.g., PENDING, SUCCESS, FAILED, REFUNDED
-//    // --- End New fields ---
-//
-//    private BigDecimal cartSubTotal;
-//    private BigDecimal shippingFee;
-//    private BigDecimal discountAmount;
-//    private BigDecimal totalAmount;
-//    private OrderStatus orderStatus; // e.g., PENDING, PROCESSING, SHIPPED, DELIVERED, CANCELED
-//
-//    private LocalDateTime orderDate;
-//    private LocalDateTime lastUpdated;
-//}
+    // Human-readable order number (e.g., ORD-202602-ABCD)
+    @Indexed(unique = true)
+    private String orderNumber;
+
+    @Indexed
+    private String customerId; // Link to your User model
+
+    private String customerEmail;
+
+    // Embedded items
+    private List<OrderItem> items;
+
+    // Financial Totals
+    private String currency;
+    @Builder.Default
+    private List<OrderStatusHistory> statusHistory = new ArrayList<>();
+    private BigDecimal itemSubTotal;
+    private BigDecimal shippingFee;
+    private BigDecimal taxAmount;
+    private BigDecimal discountAmount;
+    private BigDecimal grandTotal;
+
+    // Status Tracking
+    private OrderStatus orderStatus;
+    private PaymentStatus paymentStatus;
+
+    // Payment Info
+    private String paymentMethod; // e.g., "PAYSTACK", "FLUTTERWAVE", "STRIPE"
+    private String paymentReference; // Transaction ID from the payment gateway
+
+    // Shipping & Billing
+    private Address shippingAddress;
+    private Address billingAddress;
+
+    private String orderNotes; // Optional message from customer
+
+    @CreatedDate
+    private LocalDateTime createdAt;
+
+    @LastModifiedDate
+    private LocalDateTime updatedAt;
+
+    private String courierName; // e.g., "GIG Logistics", "DHL"
+    private String trackingNumber;
+    private String trackingUrl;
+    private String appliedPromoCode;
+
+    @Version
+    private Long version;
+}

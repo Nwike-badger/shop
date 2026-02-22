@@ -1,9 +1,10 @@
 package semicolon.africa.waylchub.model.order;
 
 public enum OrderStatus {
-    PENDING,
+    PENDING_PAYMENT,
     PROCESSING,
     SHIPPED,
     DELIVERED,
-    CANCELED
+    CANCELLED,
+    REFUNDED
 }

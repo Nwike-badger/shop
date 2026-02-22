@@ -9,6 +9,8 @@ import org.springframework.retry.annotation.Recover;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import semicolon.africa.waylchub.model.event.FailedAggregateSync;
 import semicolon.africa.waylchub.repository.event.FailedAggregateSyncRepository;
 import semicolon.africa.waylchub.service.productService.ProductService;
@@ -54,7 +56,7 @@ public class StockChangeEventListener {
     private final FailedAggregateSyncRepository failedSyncRepository; // ✅ Injected Repository
 
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Retryable(
             value = OptimisticLockingFailureException.class,
             maxAttempts = 3,
