@@ -28,7 +28,7 @@ public class AggregateSyncScheduler {
      */
     @Scheduled(fixedDelay = 300000)
     public void retryFailedAggregateSyncs() {
-        List<FailedAggregateSync> failedSyncs = failedSyncRepository.findByIsResolvedFalse();
+        List<FailedAggregateSync> failedSyncs = failedSyncRepository.findByResolvedFalse();
 
         if (failedSyncs.isEmpty()) {
             return; // Nothing to process

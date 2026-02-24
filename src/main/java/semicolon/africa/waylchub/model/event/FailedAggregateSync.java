@@ -27,7 +27,7 @@ public class FailedAggregateSync {
 
     private String errorMessage;
 
-    private boolean isResolved; // Flag to mark when the background job fixes it
+    private boolean resolved; // Flag to mark when the background job fixes it
 
     private int attemptCount; // How many times the background job has tried to fix it
 

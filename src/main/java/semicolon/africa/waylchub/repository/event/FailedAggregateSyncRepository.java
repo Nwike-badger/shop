@@ -10,5 +10,5 @@ import java.util.List;
 public interface FailedAggregateSyncRepository extends MongoRepository<FailedAggregateSync, String> {
 
     // Custom query to find all unresolved failures so a cron job can process them
-    List<FailedAggregateSync> findByIsResolvedFalse();
+    List<FailedAggregateSync> findByResolvedFalse();
 }

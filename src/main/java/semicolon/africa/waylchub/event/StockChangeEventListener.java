@@ -59,7 +59,7 @@ public class StockChangeEventListener {
                 .variantId(event.getVariantId())
                 .reason(reason)
                 .errorMessage(errorMessage)
-                .isResolved(false)
+                .resolved(false)
                 .attemptCount(0)
                 .build();
 
