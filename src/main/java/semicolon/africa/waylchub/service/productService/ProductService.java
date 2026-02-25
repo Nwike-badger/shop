@@ -206,6 +206,21 @@ public class ProductService {
         return saved;
     }
 
+    public ProductDetailResponse getProductDetails(String productId) {
+        // 1. Fetch Product
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+
+        // 2. Fetch Variants for this Product
+        List<ProductVariant> variants = variantRepository.findByProductId(productId);
+
+        // 3. Return Combined Data
+        return ProductDetailResponse.builder()
+                .product(product)
+                .variants(variants)
+                .build();
+    }
+
     @Transactional
     public void deleteProduct(String productId) {
         List<ProductVariant> variants = variantRepository.findByProductId(productId);

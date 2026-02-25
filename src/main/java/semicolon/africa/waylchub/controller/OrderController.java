@@ -20,6 +20,7 @@ import semicolon.africa.waylchub.model.order.Order;
 import semicolon.africa.waylchub.service.orderService.OrderService;
 // IMPORTANT: Adjust this import to match your actual CustomUserDetails location
 
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -154,8 +155,9 @@ public class OrderController {
                 .orderId(order.getId())
                 .orderNumber(order.getOrderNumber())
                 .customerEmail(order.getCustomerEmail())
-                .grandTotal(order.getGrandTotal())
-                .status(order.getOrderStatus())
+                .totalAmount(order.getGrandTotal())
+                .orderStatus(order.getOrderStatus())
+                .createdAt(LocalDateTime.now())
                 .paymentStatus(order.getPaymentStatus())
                 .itemNames(order.getItems().stream()
                         .map(item -> item.getProductName() + " (x" + item.getQuantity() + ")")

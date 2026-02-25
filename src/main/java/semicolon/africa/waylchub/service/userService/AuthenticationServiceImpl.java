@@ -1,6 +1,7 @@
 package semicolon.africa.waylchub.service.userService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -16,6 +17,7 @@ import semicolon.africa.waylchub.model.user.TokenType;
 import semicolon.africa.waylchub.model.user.User;
 import semicolon.africa.waylchub.repository.userRepository.TokenRepository;
 import semicolon.africa.waylchub.repository.userRepository.UserRepository;
+import semicolon.africa.waylchub.service.productService.CartService;
 
 import java.util.Arrays;
 import java.util.List;
@@ -23,15 +25,18 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthenticationServiceImpl implements AuthenticationService {
 
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final TokenRepository tokenRepository;
     private final UserRepository userRepository;
+    private final CartService cartService;
 
     @Override
     @Transactional
+
     public AuthenticationResponse login(AuthenticationRequest request) {
 
         Authentication authentication = authenticationManager.authenticate(
@@ -49,6 +54,15 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         revokeUserTokens(user, Arrays.asList(TokenType.ACCESS_TOKEN, TokenType.REFRESH_TOKEN));
         saveToken(user, accessToken, TokenType.ACCESS_TOKEN);
         saveToken(user, refreshToken, TokenType.REFRESH_TOKEN);
+
+        if (request.getGuestId() != null && !request.getGuestId().isEmpty()) {
+            try {
+                cartService.mergeCarts(request.getGuestId(), user.getId());
+            } catch (Exception e) {
+                // Don't fail login if cart merge fails, just log it
+                log.error("Failed to merge cart for user {}", user.getId(), e);
+            }
+        }
 
         return AuthenticationResponse.builder()
                 .accessToken(accessToken)

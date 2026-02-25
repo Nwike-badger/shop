@@ -6,19 +6,22 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
-import java.util.List;
-import java.util.Map;
 
-@Data
-@AllArgsConstructor
-@NoArgsConstructor
+@Data  // <--- This generates the getVariantId() method
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class CartItem {
     private String productId;
+
+    // ✅ Make sure this field exists!
+    private String variantId;
+
+    private String productName;
     private String sku;
-    private String name;
-    private Map<String, String> variantAttributes;
-    private BigDecimal price;
+    private String imageUrl;
     private int quantity;
-    private List<String> imageUrls;
+
+    private BigDecimal unitPrice;
+    private BigDecimal subTotal;
 }

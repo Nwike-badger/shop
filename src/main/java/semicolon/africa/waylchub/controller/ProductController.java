@@ -8,10 +8,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import semicolon.africa.waylchub.dto.productDto.ProductFilterRequest;
-import semicolon.africa.waylchub.dto.productDto.ProductRequest;
-import semicolon.africa.waylchub.dto.productDto.ProductResponse;
-import semicolon.africa.waylchub.dto.productDto.VariantRequest;
+import semicolon.africa.waylchub.dto.productDto.*;
 import semicolon.africa.waylchub.model.product.Product;
 import semicolon.africa.waylchub.model.product.ProductVariant;
 import semicolon.africa.waylchub.service.productService.ProductService;
@@ -76,6 +73,9 @@ public class ProductController {
         return ResponseEntity.ok(responsePage);
     }
 
+
+
+
     @GetMapping
     public ResponseEntity<List<ProductResponse>> getAllProducts() {
         return ResponseEntity.ok(productService.getAllProducts()
@@ -83,9 +83,8 @@ public class ProductController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Product> getProductById(@PathVariable String id) {
-        Product product = productService.getProductById(id); // You might need to add this to Service if missing
-        return ResponseEntity.ok(product);
+    public ResponseEntity<ProductDetailResponse> getProductById(@PathVariable String id) {
+        return ResponseEntity.ok(productService.getProductDetails(id));
     }
     // --- 3. MAPPER (Fixed for New Model) ---
 

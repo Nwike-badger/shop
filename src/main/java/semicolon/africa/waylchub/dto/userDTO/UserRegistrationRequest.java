@@ -23,7 +23,6 @@ public class UserRegistrationRequest {
     @NotBlank(message = "Last name is required")
     private String lastName;
 
-    @NotBlank(message = "address is required")
-    private Address address;
+
 
 }

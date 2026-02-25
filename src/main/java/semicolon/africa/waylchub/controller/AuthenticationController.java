@@ -1,34 +1,41 @@
 package semicolon.africa.waylchub.controller;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import semicolon.africa.waylchub.dto.userDTO.AuthenticationRequest;
-import semicolon.africa.waylchub.dto.userDTO.AuthenticationResponse;
-import semicolon.africa.waylchub.dto.userDTO.RefreshTokenRequest;
+import semicolon.africa.waylchub.dto.userDTO.*;
 import semicolon.africa.waylchub.service.userService.AuthenticationService;
+import semicolon.africa.waylchub.service.userService.UserService;
 
 @RestController
 @RequestMapping("/api/v1/auth")
-@CrossOrigin(origins = "http://localhost:5173")
+@RequiredArgsConstructor // ✅ Generates constructor for BOTH services
 public class AuthenticationController {
 
     private final AuthenticationService authenticationService;
+    private final UserService userService; // ✅ Inject User Service here
 
-    public AuthenticationController(AuthenticationService authenticationService) {
-        this.authenticationService = authenticationService;
+    // ----------------------------------------------------------------
+    // 1. REGISTRATION (Handled by UserService)
+    // ----------------------------------------------------------------
+    @PostMapping("/register")
+    public ResponseEntity<UserResponse> register(@Valid @RequestBody UserRegistrationRequest request) {
+        // We delegate "Creation" to the UserService
+        return ResponseEntity.ok(userService.register(request));
     }
 
+    // ----------------------------------------------------------------
+    // 2. AUTHENTICATION (Handled by AuthenticationService)
+    // ----------------------------------------------------------------
     @PostMapping("/login")
     public ResponseEntity<AuthenticationResponse> login(@Valid @RequestBody AuthenticationRequest request) {
-        AuthenticationResponse response = authenticationService.login(request);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(authenticationService.login(request));
     }
 
     @PostMapping("/refresh")
     public ResponseEntity<AuthenticationResponse> refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
-        AuthenticationResponse response = authenticationService.refreshToken(request);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(authenticationService.refreshToken(request));
     }
 
     @PostMapping("/logout")
