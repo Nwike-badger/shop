@@ -60,6 +60,20 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public UserResponse getCurrentUser(String userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
+
+        return UserResponse.builder()
+                .id(user.getId())
+                .firstName(user.getFirstName())
+                .lastName(user.getLastName())
+                .email(user.getEmail())
+                .defaultAddress(user.getAddress())
+                .build();
+    }
+
+    @Override
     @Transactional
     public UserResponse updateUserAddress(String userId, UpdateUserAddressRequest request) {
         User user = userRepository.findById(userId)

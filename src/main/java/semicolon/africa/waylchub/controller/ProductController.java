@@ -31,14 +31,14 @@ public class ProductController {
         return new ResponseEntity<>(mapToResponse(savedProduct), HttpStatus.CREATED);
     }
 
-    // 🔥 NEW: Variant Endpoint (This was missing!)
+
     @PostMapping("/variants")
     public ResponseEntity<ProductVariant> addVariant(@Valid @RequestBody VariantRequest request) {
         ProductVariant savedVariant = productService.saveVariant(request);
         return new ResponseEntity<>(savedVariant, HttpStatus.CREATED);
     }
 
-    // --- 2. SEARCH & FILTER ---
+
 
     @PostMapping("/filter")
     public ResponseEntity<Page<ProductResponse>> filterProducts(
@@ -75,7 +75,6 @@ public class ProductController {
 
 
 
-
     @GetMapping
     public ResponseEntity<List<ProductResponse>> getAllProducts() {
         return ResponseEntity.ok(productService.getAllProducts()
@@ -86,7 +85,7 @@ public class ProductController {
     public ResponseEntity<ProductDetailResponse> getProductById(@PathVariable String id) {
         return ResponseEntity.ok(productService.getProductDetails(id));
     }
-    // --- 3. MAPPER (Fixed for New Model) ---
+
 
     private ProductResponse mapToResponse(Product p) {
         return ProductResponse.builder()
