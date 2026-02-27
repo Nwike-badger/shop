@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import semicolon.africa.waylchub.dto.orderDto.OrderItemRequest;
 import semicolon.africa.waylchub.dto.orderDto.OrderRequest;
+import semicolon.africa.waylchub.dto.orderDto.OrderResponse;
 import semicolon.africa.waylchub.event.OrderCancelledEvent;
 import semicolon.africa.waylchub.exception.InsufficientStockException;
 import semicolon.africa.waylchub.exception.ResourceNotFoundException;
@@ -314,6 +315,7 @@ public class OrderService {
         return savedOrder;
     }
 
+
     @Transactional
     public Order updateOrderStatus(String orderId, OrderStatus newStatus, String note) {
         Order order = orderRepository.findById(orderId)
@@ -378,6 +380,7 @@ public class OrderService {
         return orderRepository.findByCustomerId(customerId, pageable);
     }
 
+
     private void addStatusHistory(Order order, OrderStatus status, String note) {
         if (order.getStatusHistory() == null) {
             order.setStatusHistory(new ArrayList<>());
@@ -430,4 +433,6 @@ public class OrderService {
 
         return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     }
+
+
 }

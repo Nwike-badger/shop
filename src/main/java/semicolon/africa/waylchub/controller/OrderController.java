@@ -9,8 +9,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import semicolon.africa.waylchub.dto.orderDto.OrderRequest;
 import semicolon.africa.waylchub.dto.orderDto.OrderResponse;
@@ -18,9 +17,9 @@ import semicolon.africa.waylchub.dto.userDTO.CustomUserDetails;
 import semicolon.africa.waylchub.exception.ResourceNotFoundException;
 import semicolon.africa.waylchub.model.order.Order;
 import semicolon.africa.waylchub.service.orderService.OrderService;
-// IMPORTANT: Adjust this import to match your actual CustomUserDetails location
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -34,104 +33,83 @@ public class OrderController {
 
     /**
      * 🛒 SECURE CHECKOUT ENDPOINT
-     * POST /api/v1/orders
      */
     @PostMapping
-    public ResponseEntity<?> placeOrder(@Valid @RequestBody OrderRequest request) {
+    public ResponseEntity<?> placeOrder(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @Valid @RequestBody OrderRequest request) {
         try {
-            // 1. Get Authenticated User
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-            if (authentication == null || !authentication.isAuthenticated() || authentication.getPrincipal().equals("anonymousUser")) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Please log in to place an order"));
+            if (userDetails == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "Please log in to place an order"));
             }
 
-            // 2. Extract User Details Securely
-            String customerEmail;
-            String customerId = null;
+            // Securely set customer details from JWT token
+            request.setCustomerEmail(userDetails.getUsername());
+            request.setCustomerId(userDetails.getUserId());
 
-            if (authentication.getPrincipal() instanceof CustomUserDetails userDetails) {
-                customerEmail = userDetails.getUsername();
-                // If your CustomUserDetails has a getId() method, uncomment the next line:
-                // customerId = userDetails.getId();
-            } else {
-                customerEmail = authentication.getName();
-            }
-
-            // 3. Override payload with trusted security context data
-            request.setCustomerEmail(customerEmail);
-            if (customerId != null) {
-                request.setCustomerId(customerId);
-            }
-
-            // 4. Create Order
             Order order = orderService.createOrder(request);
-
-            // 5. Build Safe Response
-            OrderResponse response = mapToResponse(order);
-            return new ResponseEntity<>(response, HttpStatus.CREATED);
+            return new ResponseEntity<>(mapToResponse(order), HttpStatus.CREATED);
 
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         } catch (RuntimeException e) {
-            log.error("Checkout failed for user: {}", e.getMessage());
+            log.error("Checkout failed: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
         }
     }
 
     /**
-     * 🧾 GET SINGLE ORDER (For Receipt Page)
-     * GET /api/v1/orders/{orderNumber}
+     * 📜 GET CUSTOMER ORDER HISTORY (Paginated)
      */
-    @GetMapping("/{orderNumber}")
-    public ResponseEntity<?> getOrderByNumber(@PathVariable String orderNumber) {
-        Order order = orderService.getOrderByNumber(orderNumber);
-
-        // Security Check: Ensure the user owns this order
-        String currentUserEmail = SecurityContextHolder.getContext().getAuthentication().getName();
-        if (!order.getCustomerEmail().equalsIgnoreCase(currentUserEmail)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Access denied"));
-        }
-
-        return ResponseEntity.ok(order);
-    }
-
-    /**
-     * 📜 GET CUSTOMER ORDER HISTORY
-     * GET /api/v1/orders/history
-     */
-    @GetMapping("/history")
-    public ResponseEntity<Page<Order>> getMyOrders(
+    @GetMapping("/my-orders")
+    public ResponseEntity<Page<OrderResponse>> getMyOrders(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
 
-        // Extract ID/Email securely from context, not from the URL!
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        // Note: If you are searching by customerId in MongoDB, extract the ID here.
-        // For now, we assume your repository can search by the authenticated name/email.
-        String customerId = authentication.getName();
+        if (userDetails == null) throw new RuntimeException("Unauthenticated");
 
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<Order> orders = orderService.getCustomerOrders(customerId, pageable);
+        Page<Order> orders = orderService.getCustomerOrders(userDetails.getUserId(), pageable);
 
-        return ResponseEntity.ok(orders);
+        return ResponseEntity.ok(orders.map(this::mapToResponse));
+    }
+
+    /**
+     * 🧾 GET SINGLE ORDER (For Receipt Page)
+     */
+    @GetMapping("/{orderNumber}")
+    public ResponseEntity<?> getOrderByNumber(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable String orderNumber) {
+
+        if (userDetails == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+
+        Order order = orderService.getOrderByNumber(orderNumber);
+
+        // Security Check: Ensure the user owns this order
+        if (!order.getCustomerId().equals(userDetails.getUserId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Access denied"));
+        }
+
+        return ResponseEntity.ok(mapToResponse(order));
     }
 
     /**
      * 🛑 CANCEL ORDER
-     * PATCH /api/v1/orders/{orderId}/cancel
      */
     @PatchMapping("/{orderId}/cancel")
     public ResponseEntity<?> cancelOrder(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
             @PathVariable String orderId,
             @RequestBody(required = false) Map<String, String> payload) {
         try {
-            // Security Check: Ensure the user owns this order before cancelling
-            Order existingOrder = orderService.getOrderById(orderId);
-            String currentUserEmail = SecurityContextHolder.getContext().getAuthentication().getName();
+            if (userDetails == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
 
-            if (!existingOrder.getCustomerEmail().equalsIgnoreCase(currentUserEmail)) {
+            // Security Check
+            Order existingOrder = orderService.getOrderById(orderId);
+            if (!existingOrder.getCustomerId().equals(userDetails.getUserId())) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Access denied"));
             }
 
@@ -157,11 +135,13 @@ public class OrderController {
                 .customerEmail(order.getCustomerEmail())
                 .totalAmount(order.getGrandTotal())
                 .orderStatus(order.getOrderStatus())
-                .createdAt(LocalDateTime.now())
+                .createdAt(order.getCreatedAt())
                 .paymentStatus(order.getPaymentStatus())
-                .itemNames(order.getItems().stream()
-                        .map(item -> item.getProductName() + " (x" + item.getQuantity() + ")")
-                        .collect(Collectors.toList()))
+                .itemNames(order.getItems() != null ?
+                        order.getItems().stream()
+                                .map(item -> item.getProductName() + " (x" + item.getQuantity() + ")")
+                                .collect(Collectors.toList())
+                        : List.of())
                 .build();
     }
 }
