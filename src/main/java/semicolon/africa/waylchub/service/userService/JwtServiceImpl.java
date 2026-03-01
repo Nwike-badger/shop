@@ -7,6 +7,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import semicolon.africa.waylchub.dto.userDTO.CustomUserDetails;
 import semicolon.africa.waylchub.repository.userRepository.TokenRepository;
@@ -25,7 +26,8 @@ public class JwtServiceImpl implements JwtService {
 
     private final TokenRepository tokenRepository;
 
-    private final String jwtSecret = "MbgaxjyxfGOeCdYIc4ibGIhA4NI69DvK";
+    @Value("${application.security.jwt.secret-key}")
+    private String jwtSecret;
 
     private final int accessTokenExpirationInSec = 3600; // 1 hour
     private final int refreshTokenExpirationInSec = 604800; // 7 days

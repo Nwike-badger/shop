@@ -1,5 +1,6 @@
 package semicolon.africa.waylchub.controller;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -39,8 +40,14 @@ public class AuthenticationController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(@RequestParam String username) {
-        authenticationService.logout(username);
+    public ResponseEntity<Void> logout(HttpServletRequest request) {
+        String authHeader = request.getHeader("Authorization");
+        authenticationService.logout(authHeader);
         return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/google")
+    public ResponseEntity<AuthenticationResponse> googleLogin(@Valid @RequestBody GoogleLoginRequest request) {
+        return ResponseEntity.ok(authenticationService.googleLogin(request));
     }
 }
