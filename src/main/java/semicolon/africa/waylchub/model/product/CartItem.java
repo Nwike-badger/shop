@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 @Data  // <--- This generates the getVariantId() method
 @Builder
@@ -24,4 +25,5 @@ public class CartItem {
 
     private BigDecimal unitPrice;
     private BigDecimal subTotal;
+    private Map<String, String> variantAttributes;
 }

@@ -17,6 +17,7 @@ import semicolon.africa.waylchub.repository.productRepository.ProductVariantRepo
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.Optional;
 
 @Slf4j
@@ -109,6 +110,12 @@ public class CartService {
             String imageUrl = (variant.getImages() != null && !variant.getImages().isEmpty())
                     ? variant.getImages().get(0).getUrl() : null;
 
+            // 🔥 GRAB THE ATTRIBUTES (Prioritize React's custom measurements, fallback to DB standard sizes)
+            Map<String, String> attributesToSave = variant.getAttributes();
+            if (request.getVariantAttributes() != null && !request.getVariantAttributes().isEmpty()) {
+                attributesToSave = request.getVariantAttributes();
+            }
+
             CartItem newItem = CartItem.builder()
                     .productId(product.getId())
                     .variantId(variant.getId())
@@ -116,9 +123,9 @@ public class CartService {
                     .sku(variant.getSku())
                     .imageUrl(imageUrl)
                     .quantity(request.getQuantity())
-                    // 🛡️ SECURITY: Source of Truth = Database Price
                     .unitPrice(variant.getPrice())
                     .subTotal(variant.getPrice().multiply(BigDecimal.valueOf(request.getQuantity())))
+                    .variantAttributes(attributesToSave) // 🔥 SAVE IT HERE!
                     .build();
 
             cart.getItems().add(newItem);
