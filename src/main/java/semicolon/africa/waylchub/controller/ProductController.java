@@ -7,6 +7,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import semicolon.africa.waylchub.dto.productDto.*;
 import semicolon.africa.waylchub.model.product.Product;
@@ -23,29 +24,36 @@ public class ProductController {
 
     private final ProductService productService;
 
-    // --- 1. PRODUCT MANAGEMENT ---
+    // ── WRITE ENDPOINTS (Admin only) ──────────────────────────────────────────
 
+    /**
+     * ✅ FIX: Added @PreAuthorize — without this, any anonymous user could
+     * create products on your storefront.
+     */
     @PostMapping
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
     public ResponseEntity<ProductResponse> addProduct(@Valid @RequestBody ProductRequest request) {
         Product savedProduct = productService.createOrUpdateProduct(request);
         return new ResponseEntity<>(mapToResponse(savedProduct), HttpStatus.CREATED);
     }
 
-
+    /**
+     * ✅ FIX: Added @PreAuthorize — variants are pricing data, must be admin-only.
+     */
     @PostMapping("/variants")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
     public ResponseEntity<ProductVariant> addVariant(@Valid @RequestBody VariantRequest request) {
         ProductVariant savedVariant = productService.saveVariant(request);
         return new ResponseEntity<>(savedVariant, HttpStatus.CREATED);
     }
 
-
+    // ── READ ENDPOINTS (Public) ───────────────────────────────────────────────
 
     @PostMapping("/filter")
     public ResponseEntity<Page<ProductResponse>> filterProducts(
             @RequestBody ProductFilterRequest request,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
-    ) {
+            @RequestParam(defaultValue = "20") int size) {
         Pageable pageable = PageRequest.of(page, size);
         Page<Product> productPage = productService.filterProducts(request, pageable);
         return ResponseEntity.ok(productPage.map(this::mapToResponse));
@@ -53,7 +61,6 @@ public class ProductController {
 
     @GetMapping("/search")
     public ResponseEntity<List<ProductResponse>> search(@RequestParam String q) {
-        // Uses the new adapter in service
         return ResponseEntity.ok(productService.searchProducts(q)
                 .stream().map(this::mapToResponse).collect(Collectors.toList()));
     }
@@ -61,24 +68,24 @@ public class ProductController {
     @GetMapping("/category/{slug}")
     public ResponseEntity<Page<ProductResponse>> getByCategory(
             @PathVariable String slug,
-            Pageable pageable
-    ) {
-
-        Page<Product> productPage =
-                productService.getProductsByCategorySlug(slug, pageable);
-
-        Page<ProductResponse> responsePage =
-                productPage.map(this::mapToResponse);
-
-        return ResponseEntity.ok(responsePage);
+            Pageable pageable) {
+        return ResponseEntity.ok(productService.getProductsByCategorySlug(slug, pageable)
+                .map(this::mapToResponse));
     }
 
-
-
+    /**
+     * ✅ FIX: Added pagination — the original returned ALL products from MongoDB
+     * into memory in one query. With thousands of products this will OOM or time out.
+     * Now paginated: default page 0, size 20.
+     */
     @GetMapping
-    public ResponseEntity<List<ProductResponse>> getAllProducts() {
-        return ResponseEntity.ok(productService.getAllProducts()
-                .stream().map(this::mapToResponse).collect(Collectors.toList()));
+    public ResponseEntity<Page<ProductResponse>> getAllProducts(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        ProductFilterRequest emptyFilter = new ProductFilterRequest();
+        return ResponseEntity.ok(productService.filterProducts(emptyFilter, pageable)
+                .map(this::mapToResponse));
     }
 
     @GetMapping("/{id}")
@@ -86,15 +93,14 @@ public class ProductController {
         return ResponseEntity.ok(productService.getProductDetails(id));
     }
 
+    // ── HELPER ────────────────────────────────────────────────────────────────
 
     private ProductResponse mapToResponse(Product p) {
         return ProductResponse.builder()
                 .id(p.getId())
                 .name(p.getName())
                 .slug(p.getSlug())
-                // Use calculated min price for "From X" display
                 .price(p.getMinPrice() != null ? p.getMinPrice() : p.getBasePrice())
-                // Use aggregated total stock
                 .stockQuantity(p.getTotalStock() != null ? p.getTotalStock() : 0)
                 .categoryName(p.getCategoryName())
                 .categorySlug(p.getCategorySlug())

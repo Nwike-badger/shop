@@ -6,7 +6,7 @@ import semicolon.africa.waylchub.dto.userDTO.UserResponse;
 
 public interface UserService {
     UserResponse register(UserRegistrationRequest request);
-    UserResponse updateUserAddress(String userId, UpdateUserAddressRequest request);
-
     UserResponse getCurrentUser(String userId);
+    UserResponse updateUserAddress(String userId, UpdateUserAddressRequest request);
+    UserResponse promoteToAdmin(String email);
 }

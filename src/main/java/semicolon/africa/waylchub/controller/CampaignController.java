@@ -13,7 +13,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/admin/campaigns")
 @RequiredArgsConstructor
- @PreAuthorize("hasRole('ADMIN')")
+ @PreAuthorize("hasRole('ROLE_ADMIN')")
 public class CampaignController {
 
     private final CampaignService campaignService;

@@ -33,7 +33,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     private final TokenRepository tokenRepository;
     private final UserRepository userRepository;
     private final CartService cartService;
-    private final RoleRepository roleRepository;
+    private final RoleService roleService;
     private final PasswordEncoder passwordEncoder;
     @Value("${spring.security.oauth2.client.registration.google.client-id:YOUR_GOOGLE_CLIENT_ID}")
     private String googleClientId;
@@ -98,22 +98,21 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
             // 2. Check if user exists, if not, create them!
             User user = userRepository.findByEmail(email).orElseGet(() -> {
-                Role role = roleRepository.findByName(RoleName.ROLE_USER)
-                        .orElseThrow(() -> new RuntimeException("Default role not found"));
+                Role role = roleService.getRoleByUserType(UserType.CUSTOMER);
 
                 User newUser = User.builder()
                         .username(email)
                         .email(email)
                         .firstName(firstName)
-                        .lastName(lastName != null ? lastName : "") // Google sometimes only has firstName
-                        // Give them a random secure password since they use Google Auth
+                        .lastName(lastName != null ? lastName : "")
                         .password(passwordEncoder.encode(UUID.randomUUID().toString()))
-                        .roles(Collections.singleton(role))
+                        // ✅ HashSet so the roles set stays mutable after creation
+                        .roles(new HashSet<>(Collections.singleton(roleService.getRoleByUserType(UserType.CUSTOMER))))
                         .enabled(true)
                         .accountNonExpired(true)
                         .accountNonLocked(true)
                         .credentialsNonExpired(true)
-                        .verified(true) // Google emails are already verified!
+                        .verified(true)
                         .build();
 
                 return userRepository.save(newUser);
