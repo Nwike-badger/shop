@@ -13,6 +13,7 @@ import semicolon.africa.waylchub.event.StockChangedEvent;
 import semicolon.africa.waylchub.exception.ResourceNotFoundException;
 import semicolon.africa.waylchub.model.product.*;
 import semicolon.africa.waylchub.repository.productRepository.*;
+import semicolon.africa.waylchub.service.campaign.CampaignService;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -28,6 +29,7 @@ public class ProductService {
     private final CategoryRepository categoryRepository;
     private final BrandRepository brandRepository;
     private final MongoTemplate mongoTemplate;
+    private final CampaignService campaignService;
 
     // ✅ CRITICAL FIX #2: Add event publisher for async aggregate updates
     private final ApplicationEventPublisher eventPublisher;
@@ -160,6 +162,8 @@ public class ProductService {
         return productRepository.save(product);
     }
 
+
+
     @Transactional
     public ProductVariant saveVariant(VariantRequest request) {
         Product product = productRepository.findById(request.getProductId())
@@ -191,9 +195,24 @@ public class ProductService {
         variant.setImages(request.getImages());
         variant.setManageStock(true);
 
+        // ── CRITICAL FIX: Ghost Variant protection (mutate BEFORE saving) ─────────
+        // If this is a NEW variant added to a product currently inside an active
+        // product-level campaign, apply the campaign discount to the Java object
+        // NOW — before it's persisted. This means:
+        //   1. Only ONE DB write ever happens (the save below)
+        //   2. The returned object already holds the discounted price — no frontend refresh needed
+        //   3. originalPrice is set as a backup so deactivation restores the correct full price
+        //
+        // If there is no active campaign, this call is a no-op. Existing behaviour unchanged.
+        boolean isNewVariant = request.getId() == null;
+        if (isNewVariant && product.getActiveCampaignId() != null) {
+            campaignService.applyActiveCampaignToNewVariant(variant, product.getActiveCampaignId());
+        }
+        // ─────────────────────────────────────────────────────────────────────────
+
+        // Single DB write — persists the discounted price if campaign was applied above
         ProductVariant saved = variantRepository.save(variant);
 
-        // Calculate the change in stock and publish event
         int stockChange = (request.getStockQuantity() != null ? request.getStockQuantity() : 0) -
                 (oldStock != null ? oldStock : 0);
 

@@ -43,6 +43,18 @@ public class Product {
     @Indexed
     private String categorySlug;
 
+    // Campaign tracking
+    @Indexed
+    private String activeCampaignId;
+
+    // Safe price backup (SEPARATE from compareAtPrice which is for display)
+    private BigDecimal originalBasePrice;
+
+    // Tags for flexible targeting
+    @Indexed
+    @Builder.Default
+    private Set<String> tags = new HashSet<>();
+
     @Indexed
     private String categoryLineage;
 

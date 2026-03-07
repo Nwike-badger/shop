@@ -81,10 +81,13 @@ class ProductOrderIntegrationTest {
         ProductVariant variant = createVariant(product.getId(), "IPHONE-BLK",
                 BigDecimal.valueOf(999), 100);
 
-        // 2. Customer orders 5 items
+        // 2. Customer orders 5 items (✅ FIX: Used Builder)
         OrderRequest orderRequest = buildOrderRequest(
                 "customer@example.com",
-                List.of(new OrderItemRequest(variant.getId(), 5))
+                List.of(OrderItemRequest.builder()
+                        .variantId(variant.getId())
+                        .quantity(5)
+                        .build())
         );
 
         // 3. Create order
@@ -121,10 +124,13 @@ class ProductOrderIntegrationTest {
         ProductVariant variant = createVariant(product.getId(), "LIMITED-1",
                 BigDecimal.TEN, 3);
 
-        // 2. Try to order 5 items (more than available)
+        // 2. Try to order 5 items (more than available) (✅ FIX: Used Builder)
         OrderRequest request = buildOrderRequest(
                 "customer@example.com",
-                List.of(new OrderItemRequest(variant.getId(), 5))
+                List.of(OrderItemRequest.builder()
+                        .variantId(variant.getId())
+                        .quantity(5)
+                        .build())
         );
 
         // 3. Verify exception thrown
@@ -154,9 +160,13 @@ class ProductOrderIntegrationTest {
         ProductVariant variant = createVariant(product.getId(), "CANCEL-1",
                 BigDecimal.TEN, 100);
 
+        // (✅ FIX: Used Builder)
         OrderRequest request = buildOrderRequest(
                 "customer@example.com",
-                List.of(new OrderItemRequest(variant.getId(), 10))
+                List.of(OrderItemRequest.builder()
+                        .variantId(variant.getId())
+                        .quantity(10)
+                        .build())
         );
 
         semicolon.africa.waylchub.model.order.Order order = orderService.createOrder(request);
@@ -188,65 +198,7 @@ class ProductOrderIntegrationTest {
 //    @Order(4)
 //    @DisplayName("⚡ 4. CONCURRENCY: 20 simultaneous checkouts (draining stock to 0)")
 //    void testConcurrentCheckouts() throws InterruptedException {
-//        // 1. Setup
-//        int threadCount = 20; // Reduced to save memory
-//        int itemsPerOrder = 2;
-//        int initialStock = threadCount * itemsPerOrder; // = 40. Ensures we sell out exactly.
-//
-//        Product product = createProduct("Hot Item", "hot-item", BigDecimal.valueOf(50));
-//        ProductVariant variant = createVariant(product.getId(), "HOT-1",
-//                BigDecimal.valueOf(50), initialStock); // Set stock to 40
-//
-//        ExecutorService executor = Executors.newFixedThreadPool(20); // Thread pool matches count
-//        CountDownLatch latch = new CountDownLatch(threadCount);
-//        AtomicInteger successCount = new AtomicInteger(0);
-//        AtomicInteger failCount = new AtomicInteger(0);
-//
-//        // 2. Execute Threads
-//        for (int i = 0; i < threadCount; i++) {
-//            final int customerId = i;
-//            executor.submit(() -> {
-//                try {
-//                    OrderRequest req = buildOrderRequest(
-//                            "customer" + customerId + "@example.com",
-//                            List.of(new OrderItemRequest(variant.getId(), itemsPerOrder))
-//                    );
-//                    orderService.createOrder(req);
-//                    successCount.incrementAndGet();
-//                } catch (Exception e) {
-//                    failCount.incrementAndGet();
-//                    // System.out.println("Checkout failed: " + e.getMessage()); // Optional debug
-//                } finally {
-//                    latch.countDown();
-//                }
-//            });
-//        }
-//
-//        latch.await();
-//        executor.shutdown();
-//
-//        // 3. Verify exactly 20 orders succeeded
-//        assertThat(successCount.get())
-//                .as("All 20 concurrent threads should succeed with retries")
-//                .isEqualTo(20);
-//
-//        assertThat(failCount.get())
-//                .as("There should be 0 failures after retries")
-//                .isEqualTo(0);
-//
-//        // 4. Verify stock is now 0 (Sold Out)
-//        ProductVariant soldOut = variantRepository.findById(variant.getId()).orElseThrow();
-//        assertThat(soldOut.getStockQuantity())
-//                .as("Stock should be exactly drained to 0")
-//                .isEqualTo(0);
-//
-//        // 5. Verify parent aggregate updated
-//        Awaitility.await()
-//                .atMost(Duration.ofSeconds(10))
-//                .untilAsserted(() -> {
-//                    Product updated = productService.getProductById(product.getId());
-//                    assertThat(updated.getTotalStock()).isEqualTo(0);
-//                });
+    // ... (Test commented out in original file) ...
 //    }
 
     // =============================================================================
@@ -279,9 +231,13 @@ class ProductOrderIntegrationTest {
                 try {
                     startLatch.await(); // All threads start EXACT SAME TIME
 
+                    // (✅ FIX: Used Builder)
                     OrderRequest request = buildOrderRequest(
                             "user" + user + "@mail.com",
-                            List.of(new OrderItemRequest(variant.getId(), 1))
+                            List.of(OrderItemRequest.builder()
+                                    .variantId(variant.getId())
+                                    .quantity(1)
+                                    .build())
                     );
 
                     orderService.createOrder(request);
@@ -306,6 +262,7 @@ class ProductOrderIntegrationTest {
         ProductVariant updated = variantRepository.findById(variant.getId()).orElseThrow();
         assertThat(updated.getStockQuantity()).isEqualTo(0);
     }
+
     @Test
     @Order(5)
     @DisplayName("🛒 5. MULTI-ITEM ORDER: Multiple products, all stock reduced")
@@ -320,13 +277,13 @@ class ProductOrderIntegrationTest {
         Product product3 = createProduct("Item C", "item-c", BigDecimal.valueOf(30));
         ProductVariant variant3 = createVariant(product3.getId(), "C-1", BigDecimal.valueOf(30), 20);
 
-        // 2. Order 5 of each
+        // 2. Order 5 of each (✅ FIX: Used Builder)
         OrderRequest request = buildOrderRequest(
                 "customer@example.com",
                 List.of(
-                        new OrderItemRequest(variant1.getId(), 5),
-                        new OrderItemRequest(variant2.getId(), 5),
-                        new OrderItemRequest(variant3.getId(), 5)
+                        OrderItemRequest.builder().variantId(variant1.getId()).quantity(5).build(),
+                        OrderItemRequest.builder().variantId(variant2.getId()).quantity(5).build(),
+                        OrderItemRequest.builder().variantId(variant3.getId()).quantity(5).build()
                 )
         );
 
@@ -362,10 +319,13 @@ class ProductOrderIntegrationTest {
         product.setActive(false);
         productRepository.save(product);
 
-        // 3. Try to order
+        // 3. Try to order (✅ FIX: Used Builder)
         OrderRequest request = buildOrderRequest(
                 "customer@example.com",
-                List.of(new OrderItemRequest(variant.getId(), 5))
+                List.of(OrderItemRequest.builder()
+                        .variantId(variant.getId())
+                        .quantity(5)
+                        .build())
         );
 
         // 4. Verify rejection
@@ -381,22 +341,7 @@ class ProductOrderIntegrationTest {
     @Order(7)
     @DisplayName("↩️ 7. ROLLBACK: Order save fails → Stock automatically restored")
     void testRollbackOnOrderSaveFailure() {
-        // NOTE: This test is challenging to implement without mocking
-        // because we need to force orderRepository.save() to fail.
-        //
-        // In real production, this scenario would occur if:
-        // - Database connection lost mid-transaction
-        // - Validation error on save
-        // - Unique constraint violation
-        //
-        // The key assertion is: Stock must return to original value
-        // WITHOUT manual intervention (Spring's @Transactional handles it)
-
-        // This test validates the FIX for Bug #1 (manual rollback removal)
-        // If manual rollback still exists, this test would FAIL
-
-        // For now, we verify the behavior through integration tests 1-6
-        // which indirectly validate proper transaction management
+        // NOTE: Handled in CriticalRollbackBugTest class
     }
 
     @Test
@@ -420,9 +365,13 @@ class ProductOrderIntegrationTest {
         for (int i = 0; i < threadCount; i++) {
             executor.submit(() -> {
                 try {
+                    // (✅ FIX: Used Builder)
                     OrderRequest req = buildOrderRequest(
                             UUID.randomUUID() + "@mail.com",
-                            List.of(new OrderItemRequest(variant.getId(), 1))
+                            List.of(OrderItemRequest.builder()
+                                    .variantId(variant.getId())
+                                    .quantity(1)
+                                    .build())
                     );
                     orderService.createOrder(req);
                     success.incrementAndGet();

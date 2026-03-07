@@ -78,20 +78,6 @@ class CriticalRollbackBugTest {
         Mockito.reset(orderRepositorySpy);
     }
 
-    /**
-     * 🚨 THE CRITICAL TEST — Exposes Stock Duplication Bug
-     *
-     * SCENARIO:
-     * 1. Product has 100 stock
-     * 2. Customer orders 5 items
-     * 3. Stock reduced to 95
-     * 4. Order save FAILS (simulated)
-     * 5. What happens to stock?
-     *
-     * EXPECTED: Stock = 100 (rolled back)
-     * YOUR CODE: Stock = 105 (BUG!)
-     * FIXED CODE: Stock = 100 (correct)
-     */
     @Test
     @org.junit.jupiter.api.Order(1)
     @DisplayName("🚨 CRITICAL: Order save failure must NOT duplicate stock")
@@ -107,18 +93,18 @@ class CriticalRollbackBugTest {
         assertThat(variant.getStockQuantity()).isEqualTo(100);
 
         // 3. Mock orderRepository.save() to throw exception
-        // This simulates a real failure like:
-        // - Database connection lost
-        // - Validation error
-        // - Unique constraint violation
         Mockito.doThrow(new RuntimeException("Simulated DB error"))
                 .when(orderRepositorySpy)
                 .save(any(Order.class));
 
         // 4. Try to create order (will fail)
+        // ✅ FIX: Use Builder instead of constructor
         OrderRequest request = buildOrderRequest(
                 "customer@example.com",
-                List.of(new OrderItemRequest(initialVariantId, 5))
+                List.of(OrderItemRequest.builder()
+                        .variantId(initialVariantId)
+                        .quantity(5)
+                        .build())
         );
 
         // 5. Verify exception is thrown
@@ -126,8 +112,6 @@ class CriticalRollbackBugTest {
                 .isInstanceOf(RuntimeException.class);
 
         // 6. 🚨 THE CRITICAL ASSERTION 🚨
-        // Stock must be exactly 100 (original value)
-        // NOT 105 (which happens with manual rollback bug)
         ProductVariant afterFailure = variantRepository.findById(initialVariantId).orElseThrow();
 
         System.out.println("\n=== CRITICAL BUG CHECK ===");
@@ -147,19 +131,11 @@ class CriticalRollbackBugTest {
         }
         System.out.println("==========================\n");
 
-        // This will FAIL with your current code (shows 105)
-        // This will PASS with fixed code (shows 100)
         assertThat(afterFailure.getStockQuantity())
                 .as("Stock must return to original value after order save failure")
                 .isEqualTo(100);
     }
 
-    /**
-     * 🧪 CONTROL TEST — Happy Path (Should Always Pass)
-     *
-     * This proves the test setup is correct by showing
-     * that successful orders DO reduce stock.
-     */
     @Test
     @org.junit.jupiter.api.Order(2)
     @DisplayName("✅ CONTROL: Successful order reduces stock correctly")
@@ -173,9 +149,13 @@ class CriticalRollbackBugTest {
                 BigDecimal.valueOf(50), 100);
 
         // Create order (should succeed)
+        // ✅ FIX: Use Builder instead of constructor
         OrderRequest request = buildOrderRequest(
                 "customer@example.com",
-                List.of(new OrderItemRequest(variant.getId(), 5))
+                List.of(OrderItemRequest.builder()
+                        .variantId(variant.getId())
+                        .quantity(5)
+                        .build())
         );
 
         Order order = orderService.createOrder(request);
@@ -196,12 +176,6 @@ class CriticalRollbackBugTest {
         System.out.println("====================\n");
     }
 
-    /**
-     * 🔬 STRESS TEST — Multiple Failed Orders
-     *
-     * Shows the compounding effect of the bug.
-     * With manual rollback, each failure adds phantom stock.
-     */
     @Test
     @org.junit.jupiter.api.Order(3)
     @DisplayName("🔬 STRESS: 10 failed orders must not compound the bug")
@@ -220,9 +194,13 @@ class CriticalRollbackBugTest {
 
         // Try to create 10 orders (all will fail)
         for (int i = 0; i < 10; i++) {
+            // ✅ FIX: Use Builder instead of constructor
             OrderRequest request = buildOrderRequest(
                     "customer" + i + "@example.com",
-                    List.of(new OrderItemRequest(variantId, 5))
+                    List.of(OrderItemRequest.builder()
+                            .variantId(variantId)
+                            .quantity(5)
+                            .build())
             );
 
             try {
@@ -250,8 +228,6 @@ class CriticalRollbackBugTest {
         }
         System.out.println("===================\n");
 
-        // With your bug: stock = 150 (10 × 5 = 50 extra)
-        // With fix: stock = 100 (unchanged)
         assertThat(afterStress.getStockQuantity())
                 .as("Multiple failures must not compound phantom stock")
                 .isEqualTo(100);
