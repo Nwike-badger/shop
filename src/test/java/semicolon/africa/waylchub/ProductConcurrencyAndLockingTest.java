@@ -42,7 +42,7 @@ class ProductConcurrencyAndLockingTest {
     @Order(1)
     @DisplayName("🔒 11. Optimistic Locking: Concurrent Updates Should Fail")
     void testOptimisticLocking() {
-        // 1. Setup: Create a product (Version starts at 0 or null)
+
         Product p = Product.builder()
                 .name("Lock Test Product")
                 .slug("lock-test")

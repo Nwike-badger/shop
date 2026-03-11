@@ -96,9 +96,7 @@ public class OrderController {
         return ResponseEntity.ok(mapToResponse(order));
     }
 
-    /**
-     * 🛑 CANCEL ORDER
-     */
+
     @PatchMapping("/{orderId}/cancel")
     public ResponseEntity<?> cancelOrder(
             @AuthenticationPrincipal CustomUserDetails userDetails,

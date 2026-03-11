@@ -147,9 +147,7 @@ class ProductOrderIntegrationTest {
         assertThat(orders).isEmpty();
     }
 
-    // =============================================================================
-    // TEST 3: Order Cancellation → Stock Restoration
-    // =============================================================================
+
 
     @Test
     @Order(3)
@@ -190,20 +188,7 @@ class ProductOrderIntegrationTest {
                 });
     }
 
-    // =============================================================================
-    // TEST 4: Concurrent Orders (High Load Simulation)
-    // =============================================================================
 
-//    @Test
-//    @Order(4)
-//    @DisplayName("⚡ 4. CONCURRENCY: 20 simultaneous checkouts (draining stock to 0)")
-//    void testConcurrentCheckouts() throws InterruptedException {
-    // ... (Test commented out in original file) ...
-//    }
-
-    // =============================================================================
-    // TEST 5: Multiple Products in One Order
-    // =============================================================================
     @Test
     @Order(4)
     @DisplayName("⚡ REAL WORLD: 3 users buy 1 item each from stock of 3 at same time")

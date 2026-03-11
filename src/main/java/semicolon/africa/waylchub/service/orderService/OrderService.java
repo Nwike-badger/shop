@@ -32,16 +32,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * ✅ PRODUCTION-READY ORDER SERVICE
- *
- * CRITICAL FIXES APPLIED:
- * 1. Removed manual rollback (Spring @Transactional handles it)
- * 2. Added stock validation BEFORE reduction
- * 3. Proper exception handling
- * 4. Defensive null checks
- * 5. Consistent BigDecimal scaling
- */
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -58,40 +49,7 @@ public class OrderService {
     @Value("${app.shippingFee:0}")
     private String shippingFee;
 
-    /**
-     * ✅ CRITICAL FIX #1: Removed Manual Rollback
-     *
-     * WHY THE OLD CODE WAS BROKEN:
-     * The original code had this in the catch block:
-     *
-     * ```java
-     * catch (Exception e) {
-     *     for (OrderItem item : orderItems) {
-     *         productService.addStockAtomic(item.getVariantId(), ...);  // ❌ WRONG!
-     *     }
-     * }
-     * ```
-     *
-     * PROBLEM:
-     * - This method is @Transactional
-     * - When exception is thrown, Spring AUTOMATICALLY rolls back ALL database changes
-     * - This includes the reduceStockAtomic() calls made earlier
-     * - The manual addStockAtomic() calls will ADD extra stock on top of the rollback
-     * - Result: Stock count goes UP instead of staying the same!
-     *
-     * SCENARIO:
-     * 1. Variant has 100 stock
-     * 2. User checks out 5 items
-     * 3. reduceStockAtomic() reduces to 95
-     * 4. Order save fails
-     * 5. Spring rolls back → stock back to 100 (automatic)
-     * 6. Manual restore adds 5 more → stock becomes 105!!! (BUG)
-     *
-     * FIX:
-     * - Remove the manual rollback
-     * - Trust Spring's @Transactional to handle rollback
-     * - MongoDB transactions will restore stock automatically
-     */
+    
     @Transactional
     // ✅ Keep this configuration. It is robust.
     @Retryable(
@@ -142,7 +100,7 @@ public class OrderService {
             ProductVariant variant = variantMap.get(variantId);
             Product parentProduct = productMap.get(variant.getProductId());
 
-            // ⚠️ CRITICAL FIX HERE ⚠️
+
             try {
                 productService.reduceStockAtomic(variant.getId(), quantity);
             } catch (DataIntegrityViolationException | OptimisticLockingFailureException e) {
@@ -157,7 +115,7 @@ public class OrderService {
                 );
             }
 
-            // ... (Rest of loop remains the same) ...
+
             BigDecimal unitPrice = variant.getPrice() != null ?
                     variant.getPrice() : BigDecimal.ZERO;
             BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(quantity))
@@ -182,7 +140,7 @@ public class OrderService {
             itemSubTotal = itemSubTotal.add(lineTotal);
         }
 
-        // ... (Total calculation and saving logic remains the same) ...
+
         BigDecimal shippingFee = calculateShippingFee(request.getShippingAddress(), itemSubTotal);
         BigDecimal taxAmount = calculateTax(itemSubTotal);
         BigDecimal discountAmount = calculateDiscount(request.getAppliedPromoCode(), itemSubTotal);
@@ -222,15 +180,7 @@ public class OrderService {
         return savedOrder;
     }
 
-    /**
-     * ✅ NEW METHOD: Validate Stock Before Reducing
-     *
-     * WHY THIS IS CRITICAL:
-     * - Checks stock availability BEFORE making any changes
-     * - Prevents unnecessary atomic operations that would need rollback
-     * - Gives user clear error messages about which items are unavailable
-     * - Respects manageStock flag (digital products have infinite stock)
-     */
+
     private void validateStockAvailability(
             Map<String, Integer> consolidatedItems,
             Map<String, ProductVariant> variantMap,
@@ -303,8 +253,7 @@ public class OrderService {
 
         Order savedOrder = orderRepository.save(order);
 
-        // ✅ CORRECT: Async event-driven stock restoration
-        // This is the RIGHT way to restore stock - not manual loops
+
         eventPublisher.publishEvent(
                 new OrderCancelledEvent(savedOrder.getId(), savedOrder.getItems())
         );

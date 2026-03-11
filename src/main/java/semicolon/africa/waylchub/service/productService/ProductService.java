@@ -195,15 +195,7 @@ public class ProductService {
         variant.setImages(request.getImages());
         variant.setManageStock(true);
 
-        // ── CRITICAL FIX: Ghost Variant protection (mutate BEFORE saving) ─────────
-        // If this is a NEW variant added to a product currently inside an active
-        // product-level campaign, apply the campaign discount to the Java object
-        // NOW — before it's persisted. This means:
-        //   1. Only ONE DB write ever happens (the save below)
-        //   2. The returned object already holds the discounted price — no frontend refresh needed
-        //   3. originalPrice is set as a backup so deactivation restores the correct full price
-        //
-        // If there is no active campaign, this call is a no-op. Existing behaviour unchanged.
+
         boolean isNewVariant = request.getId() == null;
         if (isNewVariant && product.getActiveCampaignId() != null) {
             campaignService.applyActiveCampaignToNewVariant(variant, product.getActiveCampaignId());
