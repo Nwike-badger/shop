@@ -33,172 +33,110 @@ public class DataSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        System.out.println("🚀 STARTING ULTIMATE STRESS-TEST DATA SEEDER...");
+        System.out.println("🚀 STARTING DISCRETE VARIANT SEEDER...");
 
-        // 1. Setup Search Index
         try {
             mongoTemplate.indexOps(Product.class).ensureIndex(
                     new TextIndexDefinition.TextIndexDefinitionBuilder()
-                            .onField("name")
-                            .onField("description")
-                            .onField("brandName")
-                            .named("text_search")
-                            .build()
+                            .onField("name").onField("description").onField("brandName")
+                            .named("text_search").build()
             );
         } catch (Exception e) {
             System.out.println("⚠️ Index warning: " + e.getMessage());
         }
 
-        // 2. Wipe Clean (Dev Mode Only)
         variantRepo.deleteAll();
         productRepo.deleteAll();
         categoryRepo.deleteAll();
         brandRepo.deleteAll();
 
-        // 3. Create Brands
         createBrands();
-
-        // 4. Create Catalogue
         createCatalogue();
 
-        System.out.println("✅ SEEDING COMPLETE! Ready to test Cart Variants.");
+        System.out.println("✅ SEEDING COMPLETE!");
     }
 
     private void createBrands() {
-        List<String> brands = List.of("Belle Femme", "Aba Artisans", "Lagos Threads", "Zara", "Nike", "Felicity", "Apple", "Polo Ralph");
-        for (String b : brands) {
+        List.of("Apple", "Samsung", "Nike", "Felicity").forEach(b -> {
             Brand brand = new Brand();
             brand.setName(b);
             brand.setSlug(b.toLowerCase().replace(" ", "-"));
             brandRepo.save(brand);
-        }
+        });
     }
 
     private void createCatalogue() {
-        // --- CATEGORY TREE ---
-        Category fashion = saveCat("Fashion", "fashion", null, "https://images.unsplash.com/photo-1445205170230-05328324f375?w=600");
-        Category electronics = saveCat("Electronics & Tech", "electronics", null, "https://images.unsplash.com/photo-1498049860654-af5a11528db3?w=600");
+        Category tech = saveCat("Electronics", "electronics", null, "https://images.unsplash.com/photo-1498049860654-af5a11528db3?w=600");
+        Category phones = saveCat("Smartphones", "smartphones", tech, "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=600");
+        Category laptops = saveCat("Laptops", "laptops", tech, "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=600");
 
-        // Sub-Categories
-        Category women = saveCat("Women's Wear", "women", fashion, "https://images.unsplash.com/photo-1483985988355-763728e1935b?w=600");
-        Category dresses = saveCat("Dresses & Gowns", "dresses", women, "https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?w=600");
-        Category bags = saveCat("Handbags & Accessories", "bags", women, "https://images.unsplash.com/photo-1590874103328-eac38a683ce7?w=600");
-
-        Category men = saveCat("Men's Wear", "men", fashion, "https://images.unsplash.com/photo-1617137968427-85924c800a22?w=600");
-        Category shirts = saveCat("Shirts & Polos", "shirts", men, "https://images.unsplash.com/photo-1596755094514-f87e32f85e23?w=600");
-        Category traditional = saveCat("Traditional Native", "traditional", men, "https://images.unsplash.com/photo-1584361853901-dd1904bf7987?w=600");
-
-        Category inverters = saveCat("Inverters & Solar", "inverters", electronics, "https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?w=600");
-        Category laptops = saveCat("Laptops & Computers", "laptops", electronics, "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=600");
-
-
-        // --- 🧪 NEW: EXTREME VARIANT TESTING PRODUCTS ---
-
-        // 1. Tech Product (RAM + Storage)
+        // 🧪 DISCRETE INVENTORY TEST: Phones with specific, irregular combos
         createProductWithVariants(
-                "MacBook Pro 14 M3 Max", "macbook-pro-m3", laptops, "apple",
-                new BigDecimal("3500000"),
-                "Mind-blowing. Head-turning. The M3 Max chip brings serious speed and capability.",
+                "Apple iPhone 15 Pro", "iphone-15-pro", phones, "apple",
+                new BigDecimal("1500000"), null,
+                "Forged in titanium. The most premium iPhone ever built.",
+                List.of(new ProductImage("https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=800&q=90", true)),
+                List.of("smartphone", "premium"),
+                Map.of("Screen", "6.1-inch Super Retina XDR", "Chip", "A17 Pro"),
+                Map.of("Color", List.of("Titanium Black", "Titanium Blue"), "Storage", List.of("128GB", "256GB", "1TB"), "RAM", List.of("8GB")),
+                true,
+                List.of(
+                        // Notice: There is no Blue 1TB. The frontend will only show these exact 3 boxes.
+                        new VariantConfig("IP15P-BLK-128", new BigDecimal("1500000"), null, 10, Map.of("Color", "Titanium Black", "Storage", "128GB", "RAM", "8GB"), true),
+                        new VariantConfig("IP15P-BLU-256", new BigDecimal("1700000"), null, 5, Map.of("Color", "Titanium Blue", "Storage", "256GB", "RAM", "8GB"), true),
+                        new VariantConfig("IP15P-BLK-1TB", new BigDecimal("2200000"), null, 2, Map.of("Color", "Titanium Black", "Storage", "1TB", "RAM", "8GB"), true)
+                )
+        );
+
+        createProductWithVariants(
+                "MacBook Pro 16 M3 Max", "macbook-pro-m3-16", laptops, "apple",
+                new BigDecimal("4500000"), new BigDecimal("5000000"),
+                "Mind-blowing. Head-turning.",
                 List.of(new ProductImage("https://images.unsplash.com/photo-1517336714731-489689fd1ca4?w=800&q=90", true)),
-                Map.of("RAM", List.of("16GB", "36GB"), "Storage", List.of("512GB", "1TB SSD")),
+                List.of("laptop", "flash-sale"),
+                Map.of("Processor", "M3 Max 16-Core", "Weight", "2.16 kg"),
+                Map.of("Specs", List.of("36GB / 1TB", "128GB / 4TB")),
+                true,
                 List.of(
-                        new VariantConfig("MBP-16-512", new BigDecimal("3500000"), 5, Map.of("RAM", "16GB", "Storage", "512GB")),
-                        new VariantConfig("MBP-36-1TB", new BigDecimal("4200000"), 3, Map.of("RAM", "36GB", "Storage", "1TB SSD"))
+                        new VariantConfig("MBP16-36-1TB", new BigDecimal("4500000"), null, 5, Map.of("Specs", "36GB / 1TB"), true),
+                        new VariantConfig("MBP16-128-4TB", new BigDecimal("7200000"), new BigDecimal("8000000"), 2, Map.of("Specs", "128GB / 4TB"), true)
                 )
-        );
-
-        // 2. Apparel Product (Size + Color)
-        createProductWithVariants(
-                "Classic Premium Polo Shirt", "classic-polo", shirts, "polo-ralph",
-                new BigDecimal("15000"),
-                "100% breathable organic cotton polo. Perfect for the Nigerian weekend.",
-                List.of(new ProductImage("https://images.unsplash.com/photo-1596755094514-f87e32f85e23?w=800&q=90", true)),
-                Map.of("Size", List.of("M", "L", "XL"), "Color", List.of("Navy Blue", "Crimson Red")),
-                List.of(
-                        new VariantConfig("POLO-M-NAVY", new BigDecimal("15000"), 10, Map.of("Size", "M", "Color", "Navy Blue")),
-                        new VariantConfig("POLO-L-NAVY", new BigDecimal("15000"), 15, Map.of("Size", "L", "Color", "Navy Blue")),
-                        new VariantConfig("POLO-L-RED", new BigDecimal("15000"), 8, Map.of("Size", "L", "Color", "Crimson Red"))
-                )
-        );
-
-
-        // --- 💎 ORIGINAL PRODUCTS ---
-
-        createProductWithVariants(
-                "Belle Femme Batik Pant Set", "batik-pant-set", women, "belle-femme",
-                new BigDecimal("45000"),
-                "A stunning two-piece Batik pant set. Hand-dyed organic cotton. Note: Sizes include an extra 2 to 4 inches for ease.",
-                List.of(new ProductImage("https://images.unsplash.com/photo-1601053429399-52e666a010d8?w=800&q=90", true)),
-                Map.of("Size", List.of("6", "8", "10", "Custom Size")),
-                List.of(
-                        new VariantConfig("BTK-PNT-06", new BigDecimal("45000"), 5, Map.of("Size", "6")),
-                        new VariantConfig("BTK-PNT-08", new BigDecimal("45000"), 10, Map.of("Size", "8")),
-                        new VariantConfig("BTK-PNT-CUST", new BigDecimal("55000"), 999, Map.of("Size", "Custom Size"))
-                )
-        );
-
-        createProductWithVariants(
-                "Lagos Threads Ankara Maxi Gown", "ankara-maxi", dresses, "lagos-threads",
-                new BigDecimal("52000"),
-                "Floor-length Ankara gown with bold, vibrant prints. Perfect for weddings and events.",
-                List.of(new ProductImage("https://images.unsplash.com/photo-1515347619362-72fb8ae0bc88?w=800&q=90", true)),
-                Map.of("Size", List.of("16", "18", "Custom Size")),
-                List.of(
-                        new VariantConfig("ANK-MAX-16", new BigDecimal("52000"), 3, Map.of("Size", "16")),
-                        new VariantConfig("ANK-MAX-CUST", new BigDecimal("65000"), 999, Map.of("Size", "Custom Size"))
-                )
-        );
-
-        createProductWithVariants(
-                "Felicity 5KVA Solar Inverter", "felicity-5kva-inverter", inverters, "felicity",
-                new BigDecimal("850000"),
-                "Pure sine wave solar inverter with built-in MPPT charge controller. Highly reliable for home power systems.",
-                List.of(new ProductImage("https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?w=800&q=90", true)),
-                null, // Single variant logic
-                List.of(new VariantConfig("FEL-5KVA-01", new BigDecimal("850000"), 12, Map.of()))
         );
     }
 
-    // --- Helpers ---
     private Category saveCat(String name, String slug, Category parent, String img) {
         Category c = new Category();
-        c.setName(name);
-        c.setSlug(slug);
-        c.setParent(parent);
-        c.setImageUrl(img == null ? "https://placehold.co/600x400" : img);
+        c.setName(name); c.setSlug(slug); c.setParent(parent); c.setImageUrl(img);
         c.setLineage(parent != null ? (parent.getLineage() == null ? "," : parent.getLineage()) + parent.getId() + "," : ",");
         return categoryRepo.save(c);
     }
 
-    private void createProductWithVariants(String name, String slug, Category cat, String brandSlug, BigDecimal basePrice, String description, List<ProductImage> images, Map<String, List<String>> options, List<VariantConfig> configs) {
+    private void createProductWithVariants(
+            String name, String slug, Category cat, String brandSlug,
+            BigDecimal basePrice, BigDecimal compareAtPrice, String description,
+            List<ProductImage> images, List<String> tags, Map<String, String> specs,
+            Map<String, List<String>> options, boolean isActive, List<VariantConfig> configs) {
+
         ProductRequest req = new ProductRequest();
-        req.setName(name);
-        req.setSlug(slug);
-        req.setBasePrice(basePrice);
-        req.setCategorySlug(cat.getSlug());
-        req.setBrandSlug(brandSlug);
-        req.setDescription(description);
-        req.setImages(images);
-        req.setVariantOptions(options);
-        req.setDiscount(BigDecimal.ZERO);
+        req.setName(name); req.setSlug(slug); req.setBasePrice(basePrice);
+        req.setCompareAtPrice(compareAtPrice); req.setCategorySlug(cat.getSlug());
+        req.setBrandSlug(brandSlug); req.setDescription(description);
+        req.setImages(images); req.setTags(tags); req.setSpecifications(specs);
+        req.setVariantOptions(options); req.setIsActive(isActive); req.setDiscount(BigDecimal.ZERO);
 
         Product p = productService.createOrUpdateProduct(req);
 
         for (VariantConfig c : configs) {
             VariantRequest v = new VariantRequest();
-            v.setProductId(p.getId());
-            v.setSku(c.sku);
-            v.setPrice(c.price);
-            v.setStockQuantity(c.stock);
-            v.setAttributes(c.attributes);
-            v.setImages(images);
+            v.setProductId(p.getId()); v.setSku(c.sku); v.setPrice(c.price);
+            v.setCompareAtPrice(c.compareAtPrice); v.setStockQuantity(c.stock);
+            v.setAttributes(c.attributes); v.setImages(images); v.setIsActive(c.isActive);
             productService.saveVariant(v);
         }
     }
 
-    private record VariantConfig(String sku, BigDecimal price, int stock, Map<String, String> attributes) {}
+    private record VariantConfig(String sku, BigDecimal price, BigDecimal compareAtPrice, int stock, Map<String, String> attributes, boolean isActive) {}
 }
-
 
 
 

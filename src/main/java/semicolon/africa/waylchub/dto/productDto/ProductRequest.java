@@ -37,4 +37,5 @@ public class ProductRequest {
 
     private String categorySlug;
     private String brandSlug;
+    private List<String> tags;
 }

@@ -50,5 +50,6 @@ public class VariantRequest {
      * ]
      */
     private List<ProductImage> images = new ArrayList<>();
+    private Boolean isActive;
 }
 

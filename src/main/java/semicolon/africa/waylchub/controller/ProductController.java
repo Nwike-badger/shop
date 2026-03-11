@@ -47,6 +47,32 @@ public class ProductController {
         return new ResponseEntity<>(savedVariant, HttpStatus.CREATED);
     }
 
+    @PostMapping("/{id}/reviews")
+    @PreAuthorize("hasAnyRole('ROLE_USER', 'ROLE_ADMIN')") // Must be logged in to review
+    public ResponseEntity<Void> addReview(@PathVariable String id, @RequestParam int rating) {
+        productService.addReview(id, rating);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * ✅ NEW: Delete an entire product and all its variants
+     */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    public ResponseEntity<Void> deleteProduct(@PathVariable String id) {
+        productService.deleteProduct(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * ✅ NEW: Delete a specific variant
+     */
+    @DeleteMapping("/variants/{variantId}")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    public ResponseEntity<Void> deleteVariant(@PathVariable String variantId) {
+        productService.deleteVariant(variantId);
+        return ResponseEntity.noContent().build();
+    }
     // ── READ ENDPOINTS (Public) ───────────────────────────────────────────────
 
     @PostMapping("/filter")
@@ -57,6 +83,11 @@ public class ProductController {
         Pageable pageable = PageRequest.of(page, size);
         Page<Product> productPage = productService.filterProducts(request, pageable);
         return ResponseEntity.ok(productPage.map(this::mapToResponse));
+    }
+
+    @GetMapping("/details/{slug}")
+    public ResponseEntity<Product> getBySlug(@PathVariable String slug) {
+        return ResponseEntity.ok(productService.getProductBySlug(slug));
     }
 
     @GetMapping("/search")

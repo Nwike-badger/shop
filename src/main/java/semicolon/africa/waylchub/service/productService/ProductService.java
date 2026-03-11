@@ -116,6 +116,10 @@ public class ProductService {
             product.setActive(request.getIsActive());
         }
 
+        if (request.getTags() != null) {
+            product.setTags(new HashSet<>(request.getTags()));
+        }
+
         // Pricing and Discount Logic
         if (request.getDiscount() != null && request.getDiscount().compareTo(BigDecimal.ZERO) > 0) {
             if (request.getDiscount().compareTo(new BigDecimal("100")) > 0) {
@@ -159,7 +163,11 @@ public class ProductService {
             product.setVariantOptions(new ArrayList<>());
         }
 
-        return productRepository.save(product);
+        Product saved = productRepository.save(product);
+        // ✅ BUG FIX: recalculate minPrice/maxPrice so homepage reflects the new
+        // basePrice immediately — without waiting for a variant save to trigger the event
+        updateParentAggregates(saved.getId());
+        return saved;
     }
 
 
@@ -195,7 +203,9 @@ public class ProductService {
         variant.setImages(request.getImages());
         variant.setManageStock(true);
 
-
+        if (request.getIsActive() != null) {
+            variant.setActive(request.getIsActive());
+        }
         boolean isNewVariant = request.getId() == null;
         if (isNewVariant && product.getActiveCampaignId() != null) {
             campaignService.applyActiveCampaignToNewVariant(variant, product.getActiveCampaignId());
