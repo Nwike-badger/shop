@@ -20,7 +20,7 @@ public class CacheConfig {
 
     @Bean
     public CacheManager cacheManager() {
-        // Registers the two cache buckets used in CategoryService
+
         return new ConcurrentMapCacheManager("categoryTree", "featuredCategories");
     }
 }

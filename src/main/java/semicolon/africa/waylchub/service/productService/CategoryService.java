@@ -20,9 +20,7 @@ public class CategoryService {
 
     private final CategoryRepository categoryRepository;
 
-    // ========================================================================
-    // 1. CREATE CATEGORY (Logic Restored + Cache Eviction Added)
-    // ========================================================================
+
 
     @Transactional
     @CacheEvict(value = "categoryTree", allEntries = true)

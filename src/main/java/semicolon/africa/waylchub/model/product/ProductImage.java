@@ -9,5 +9,11 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class ProductImage {
     private String url;
-    private boolean isPrimary; // True for the main image shown in search results
+    private boolean isPrimary;
+    private MediaType type;
+
+    public enum MediaType {
+        IMAGE,
+        VIDEO
+    }
 }

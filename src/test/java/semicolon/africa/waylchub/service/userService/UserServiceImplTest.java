@@ -414,7 +414,7 @@ class UserServiceImplTest {
 
             Address newAddress = new Address();
             newAddress.setStreetAddress("12 Lagos St");
-            newAddress.setTownCity("Lagos");
+            newAddress.setCity("Lagos");
 
             UpdateUserAddressRequest request = new UpdateUserAddressRequest();
             request.setAddress(newAddress);
@@ -425,7 +425,7 @@ class UserServiceImplTest {
             UserResponse response = userService.updateUserAddress("user-1", request);
 
             assertThat(response.getDefaultAddress()).isNotNull();
-            assertThat(response.getDefaultAddress().getTownCity()).isEqualTo("Lagos");
+            assertThat(response.getDefaultAddress().getCity()).isEqualTo("Lagos");
 
             ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
             verify(userRepository).save(captor.capture());
