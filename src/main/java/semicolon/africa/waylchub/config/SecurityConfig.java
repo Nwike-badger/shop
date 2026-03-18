@@ -50,7 +50,8 @@ public class SecurityConfig {
                                 "/api/v1/auth/**",
                                 "/api/categories/**",
                                 "/api/products/**",
-                                "/api/v1/cart/**"
+                                "/api/v1/cart/**",
+                                "/api/v1/test-email/**"
                         ).permitAll()
                         .requestMatchers("/api/v1/users/**").authenticated()
                         .anyRequest().authenticated()
