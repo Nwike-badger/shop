@@ -16,6 +16,7 @@ import semicolon.africa.waylchub.dto.orderDto.OrderItemRequest;
 import semicolon.africa.waylchub.dto.orderDto.OrderRequest;
 import semicolon.africa.waylchub.dto.orderDto.OrderResponse;
 import semicolon.africa.waylchub.event.OrderCancelledEvent;
+import semicolon.africa.waylchub.event.OrderPaidEvent;
 import semicolon.africa.waylchub.exception.InsufficientStockException;
 import semicolon.africa.waylchub.exception.ResourceNotFoundException;
 import semicolon.africa.waylchub.model.order.*;
@@ -262,6 +263,35 @@ public class OrderService {
                 order.getOrderNumber());
 
         return savedOrder;
+    }
+
+    @Transactional
+    public void processSuccessfulPayment(String orderId, String transactionReference) {
+        Order order = getOrderById(orderId);
+
+        // 1. Idempotency Check
+        if (order.getPaymentStatus() == PaymentStatus.SUCCESS) {
+            log.info("Order {} is already marked as paid. Ignoring duplicate webhook.", orderId);
+            return;
+        }
+
+        // 2. Update Payment Statuses
+        order.setPaymentStatus(PaymentStatus.SUCCESS);
+        order.setPaymentReference(transactionReference);
+
+        // 3. Update Order Status (Inline, without refetching from DB)
+        validateStatusTransition(order.getOrderStatus(), OrderStatus.PROCESSING);
+        order.setOrderStatus(OrderStatus.PROCESSING);
+        addStatusHistory(order, OrderStatus.PROCESSING,
+                "Payment confirmed via Monnify. Ref: " + transactionReference);
+
+        // 4. Save the single instance
+        orderRepository.save(order);
+
+        // 5. Fire event AFTER save (which triggers the @TransactionalEventListener)
+        eventPublisher.publishEvent(new OrderPaidEvent(order, transactionReference));
+
+        log.info("Successfully processed payment for order: {} with Ref: {}", orderId, transactionReference);
     }
 
 

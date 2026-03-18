@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Payment Receipt - Explore Aba</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 0;
+        }
+        .email-container {
+            max-width: 600px;
+            margin: 40px auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        .header {
+            background-color: #0f172a;
+            color: #ffffff;
+            text-align: center;
+            padding: 30px 20px;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            letter-spacing: 1px;
+            color: #10b981;
+        }
+        .content {
+            padding: 40px 30px;
+            color: #333333;
+            line-height: 1.6;
+        }
+        .content h2 {
+            color: #0f172a;
+            font-size: 22px;
+            margin-top: 0;
+        }
+        .order-meta {
+            background-color: #f8fafc;
+            border-left: 4px solid #10b981;
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .order-meta p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        .order-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 25px 0;
+        }
+        .order-table th {
+            background-color: #f8fafc;
+            text-align: left;
+            padding: 12px;
+            border-bottom: 2px solid #e2e8f0;
+            color: #64748b;
+            font-size: 14px;
+        }
+        .order-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 15px;
+        }
+        .total-row td {
+            font-weight: bold;
+            color: #0f172a;
+            font-size: 16px;
+            border-bottom: none;
+            padding-top: 20px;
+        }
+        .amount-highlight {
+            color: #10b981;
+        }
+        .footer {
+            background-color: #f1f5f9;
+            color: #64748b;
+            text-align: center;
+            padding: 20px;
+            font-size: 13px;
+        }
+        .footer a {
+            color: #10b981;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="email-container">
+    <div class="header">
+        <h1>Explore Aba</h1>
+    </div>
+
+    <div class="content">
+        <h2>Thank you for your purchase!</h2>
+
+        <p>Hi <span th:text="${customerName}">Customer</span>,</p>
+        <p>We're thrilled to confirm that your recent payment was successful. We are getting your order ready and will notify you as soon as it ships.</p>
+
+        <div class="order-meta">
+            <p><strong>Order Number:</strong> <span th:text="${orderNumber}">ORD-123456</span></p>
+            <p><strong>Transaction Ref:</strong> <span th:text="${transactionRef}">TXN-000000</span></p>
+            <p><strong>Date:</strong> <span th:text="${#dates.format(#dates.createNow(), 'dd MMM yyyy')}">01 Jan 2026</span></p>
+        </div>
+
+        <table class="order-table">
+            <thead>
+            <tr>
+                <th>Item</th>
+                <th>Qty</th>
+                <th style="text-align: right;">Price</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="item : ${items}">
+                <td th:text="${item.name}">Sample Item</td>
+                <td th:text="${item.quantity}">1</td>
+                <td style="text-align: right;" th:text="'₦ ' + ${#numbers.formatDecimal(item.price, 1, 'COMMA', 2, 'POINT')}">₦ 0.00</td>
+            </tr>
+
+            <tr class="total-row">
+                <td colspan="2" style="text-align: right;">Grand Total:</td>
+                <td style="text-align: right;" class="amount-highlight" th:text="'₦ ' + ${#numbers.formatDecimal(grandTotal, 1, 'COMMA', 2, 'POINT')}">₦ 0.00</td>
+            </tr>
+            </tbody>
+        </table>
+
+        <p>If you have any questions about your order, simply reply to this email. We're here to help!</p>
+    </div>
+
+    <div class="footer">
+        <p>&copy; <span th:text="${#dates.year(#dates.createNow())}">2026</span> Explore Aba. All rights reserved.</p>
+        <p>Need help? Visit our <a href="#">Help Center</a>.</p>
+    </div>
+</div>
+
+</body>
+</html>

@@ -51,8 +51,8 @@ public class Order {
     private PaymentStatus paymentStatus;
 
     // Payment Info
-    private String paymentMethod; // e.g., "PAYSTACK", "FLUTTERWAVE", "STRIPE"
-    private String paymentReference; // Transaction ID from the payment gateway
+    private String paymentMethod;
+    private String paymentReference;
 
     // Shipping & Billing
     private Address shippingAddress;
@@ -70,6 +70,7 @@ public class Order {
     private String trackingNumber;
     private String trackingUrl;
     private String appliedPromoCode;
+
 
     @Version
     private Long version;

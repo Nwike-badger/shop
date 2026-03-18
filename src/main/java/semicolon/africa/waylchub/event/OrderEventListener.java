@@ -30,7 +30,7 @@ public class OrderEventListener {
                 productService.addStockAtomic(item.getVariantId(), item.getProductId(), item.getQuantity());
             } catch (Exception e) {
                 log.error("Failed to restore stock for variant {} from order {}", item.getVariantId(), event.getOrderId(), e);
-                // In a massive enterprise app, you'd save this failure to a Dead Letter Queue (like we did for aggregates)
+                // In a massive enterprise app, i should save this failure to a Dead Letter Queue (like we did for aggregates)
             }
         }
     }
