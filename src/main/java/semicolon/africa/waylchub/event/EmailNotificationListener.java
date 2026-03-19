@@ -9,11 +9,10 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
-import semicolon.africa.waylchub.event.OrderCancelledEvent;
-import semicolon.africa.waylchub.event.OrderPaidEvent;
+import semicolon.africa.waylchub.dto.userDTO.UserResponse;
+import semicolon.africa.waylchub.exception.UserNotFoundException;
 import semicolon.africa.waylchub.service.emailService.EmailService;
-
-import java.math.BigDecimal;
+import semicolon.africa.waylchub.service.userService.UserService;
 
 @Slf4j
 @Component
@@ -21,53 +20,110 @@ import java.math.BigDecimal;
 public class EmailNotificationListener {
 
     private final EmailService emailService;
-    private final TemplateEngine templateEngine; // Injected Thymeleaf Engine
+    private final TemplateEngine templateEngine;
+    private final UserService userService; // ✅ Injected for proper name resolution
 
-    @Async
+    /**
+     * Sends a payment receipt email after the order transaction commits.
+     *
+     * WHY THIS IS FAST:
+     * This entire method runs on the "AsyncEvent-" thread pool, AFTER the HTTP
+     * response has already been returned to the user. The user DB lookup here
+     * costs zero milliseconds on API response time.
+     *
+     * WHY WE LOOK UP BY customerId AND NOT email:
+     * Emails like "whisper2ikev@gmail.com" are meaningless as display names.
+     * The User document already has firstName + lastName — we just fetch it.
+     * If the lookup fails for any reason, we fall back gracefully.
+     */
+    @Async("asyncExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleOrderPaidEvent(OrderPaidEvent event) {
-        log.info("Background thread processing receipt for order: {}", event.getOrder().getOrderNumber());
+        String orderNumber = event.getOrder().getOrderNumber();
+        log.info("Processing receipt email for order: {}", orderNumber);
 
-        String customerEmail = event.getOrder().getCustomerEmail();
-        String subject = "Payment Receipt - Order " + event.getOrder().getOrderNumber();
+        try {
+            String customerEmail = event.getOrder().getCustomerEmail();
+            String customerName  = resolveCustomerName(event.getOrder().getCustomerId(), customerEmail);
 
-        // 1. Create the Thymeleaf Context
-        Context context = new Context();
+            Context context = new Context();
+            context.setVariable("customerName",   customerName);
+            context.setVariable("orderNumber",    orderNumber);
+            context.setVariable("transactionRef", event.getTransactionReference());
+            context.setVariable("items",          event.getOrder().getItems());
+            context.setVariable("grandTotal",     event.getOrder().getGrandTotal());
 
-        // 2. Map your dynamic variables
-        // Adjust these getters to match how your Order and User entities are actually structured
-        String email = event.getOrder().getCustomerEmail();
-        String extractedName = email.substring(0, email.indexOf("@"));
+            String htmlContent = templateEngine.process("emails/order-receipt", context);
+            String subject     = "Payment Receipt - Order " + orderNumber;
 
-        context.setVariable("customerEmail", extractedName); // not sure how to get customer name
-        context.setVariable("orderNumber", event.getOrder().getOrderNumber());
-        context.setVariable("transactionRef", event.getTransactionReference());
+            emailService.sendHtmlEmail(customerEmail, subject, htmlContent);
+            log.info("Receipt email dispatched for order: {}", orderNumber);
 
-        // Pass the list of order items for the th:each loop
-        context.setVariable("items", event.getOrder().getItems());
-
-        // Pass the grand total to be formatted in the HTML
-        context.setVariable("grandTotal", event.getOrder().getGrandTotal());
-
-        // 3. Process the template into an HTML string
-        // Spring Boot automatically looks in src/main/resources/templates/
-        String htmlContent = templateEngine.process("emails/order-receipt", context);
-
-        // 4. Send the email
-        emailService.sendHtmlEmail(customerEmail, subject, htmlContent);
-
-        log.info("Receipt email successfully queued/sent for order: {}", event.getOrder().getOrderNumber());
+        } catch (Exception e) {
+            // Intentionally swallowed — email failure is non-fatal to the order
+            log.error("Failed to send receipt email for order {}. Manual follow-up may be needed. Error: {}",
+                    orderNumber, e.getMessage(), e);
+        }
     }
 
-    @Async
+    @Async("asyncExecutor")
     @EventListener
     public void handleOrderCancelledEvent(OrderCancelledEvent event) {
-        log.info("Background thread processing cancellation email for order ID: {}", event.getOrderId());
+        log.info("Order cancellation event received for order: {} — email not yet implemented",
+                event.getOrderId());
+        // TODO: implement order-cancelled email template
+    }
 
-        // Future implementation:
-        // Context context = new Context();
-        // context.setVariable("orderId", event.getOrderId());
-        // String htmlContent = templateEngine.process("emails/order-cancelled", context);
-        // emailService.sendHtmlEmail(..., "Order Cancelled", htmlContent);
+    /**
+     * Resolves a human-readable display name for the receipt greeting.
+     *
+     * Strategy (in order of preference):
+     *   1. Look up the User by customerId → use "FirstName LastName"
+     *   2. If lookup fails (deleted user, guest checkout, etc.) → fall back to "Customer"
+     *
+     * This runs on a background thread so the latency of one MongoDB findById
+     * is completely invisible to the caller.
+     *
+     * @param customerId the Order's stored customerId (may be null for guest orders)
+     * @param email      fallback context for logging only
+     */
+    private String resolveCustomerName(String customerId, String email) {
+        if (customerId == null || customerId.isBlank()) {
+            log.warn("Order has no customerId (possible guest checkout) for email: {}. Using fallback.", email);
+            return "Customer";
+        }
+
+        try {
+            UserResponse user = userService.getCurrentUser(customerId);
+
+            String fullName = buildFullName(user.getFirstName(), user.getLastName());
+
+            if (fullName.isBlank()) {
+                log.warn("User {} has no firstName/lastName stored. Using fallback.", customerId);
+                return "Customer";
+            }
+
+            return fullName;
+
+        } catch (UserNotFoundException e) {
+            // User was deleted after placing the order — not a crash-worthy event
+            log.warn("Could not resolve name for customerId: {}. User may have been deleted. Using fallback.", customerId);
+            return "Customer";
+
+        } catch (Exception e) {
+            // DB hiccup, deserialization issue, etc. — never let this kill the email
+            log.error("Unexpected error resolving customer name for customerId: {}. Using fallback.", customerId, e);
+            return "Customer";
+        }
+    }
+
+    private String buildFullName(String firstName, String lastName) {
+        String first = (firstName != null) ? firstName.trim() : "";
+        String last  = (lastName  != null) ? lastName.trim()  : "";
+
+        if (!first.isBlank() && !last.isBlank()) return first + " " + last;
+        if (!first.isBlank()) return first;
+        if (!last.isBlank())  return last;
+        return "";
     }
 }
