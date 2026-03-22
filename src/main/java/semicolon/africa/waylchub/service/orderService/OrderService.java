@@ -266,7 +266,7 @@ public class OrderService {
     }
 
     @Transactional
-    public void processSuccessfulPayment(String orderId, String transactionReference) {
+    public void processSuccessfulPayment(String orderId, String transactionReference, String actualPaymentMethod) {
         Order order = getOrderById(orderId);
 
         // 1. Idempotency Check
@@ -275,9 +275,13 @@ public class OrderService {
             return;
         }
 
-        // 2. Update Payment Statuses
+        // 2. Update Payment Statuses and Method
         order.setPaymentStatus(PaymentStatus.SUCCESS);
         order.setPaymentReference(transactionReference);
+
+        if (actualPaymentMethod != null && !actualPaymentMethod.isBlank()) {
+            order.setPaymentMethod(actualPaymentMethod);
+        }
 
         // 3. Update Order Status (Inline, without refetching from DB)
         validateStatusTransition(order.getOrderStatus(), OrderStatus.PROCESSING);

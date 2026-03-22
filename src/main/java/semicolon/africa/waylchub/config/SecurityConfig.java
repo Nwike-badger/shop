@@ -51,7 +51,8 @@ public class SecurityConfig {
                                 "/api/categories/**",
                                 "/api/products/**",
                                 "/api/v1/cart/**",
-                                "/api/v1/test-email/**"
+                                "/api/v1/payments/webhook/**",
+                                "/api/v1/orders/verify/**"
                         ).permitAll()
                         .requestMatchers("/api/v1/users/**").authenticated()
                         .anyRequest().authenticated()

@@ -18,7 +18,6 @@ import semicolon.africa.waylchub.exception.ResourceNotFoundException;
 import semicolon.africa.waylchub.model.order.Order;
 import semicolon.africa.waylchub.service.orderService.OrderService;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -31,9 +30,6 @@ public class OrderController {
 
     private final OrderService orderService;
 
-    /**
-     * 🛒 SECURE CHECKOUT ENDPOINT
-     */
     @PostMapping
     public ResponseEntity<?> placeOrder(
             @AuthenticationPrincipal CustomUserDetails userDetails,
@@ -43,14 +39,10 @@ public class OrderController {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                         .body(Map.of("error", "Please log in to place an order"));
             }
-
-            // Securely set customer details from JWT token
             request.setCustomerEmail(userDetails.getUsername());
             request.setCustomerId(userDetails.getUserId());
-
             Order order = orderService.createOrder(request);
             return new ResponseEntity<>(mapToResponse(order), HttpStatus.CREATED);
-
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         } catch (RuntimeException e) {
@@ -59,43 +51,55 @@ public class OrderController {
         }
     }
 
-    /**
-     * 📜 GET CUSTOMER ORDER HISTORY (Paginated)
-     */
     @GetMapping("/my-orders")
     public ResponseEntity<Page<OrderResponse>> getMyOrders(
             @AuthenticationPrincipal CustomUserDetails userDetails,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(defaultValue = "100") int size) {
 
-        if (userDetails == null) throw new RuntimeException("Unauthenticated");
-
+        if (userDetails == null) {
+            throw new RuntimeException("Unauthenticated");
+        }
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         Page<Order> orders = orderService.getCustomerOrders(userDetails.getUserId(), pageable);
-
         return ResponseEntity.ok(orders.map(this::mapToResponse));
     }
 
     /**
-     * 🧾 GET SINGLE ORDER (For Receipt Page)
+     * Returns the full order document for the detail page.
+     * Returns the complete Order (not the summarised OrderResponse) so the frontend
+     * can display items, addresses, payment breakdown, status history, and tracking.
      */
     @GetMapping("/{orderNumber}")
     public ResponseEntity<?> getOrderByNumber(
             @AuthenticationPrincipal CustomUserDetails userDetails,
             @PathVariable String orderNumber) {
 
-        if (userDetails == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (userDetails == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
 
         Order order = orderService.getOrderByNumber(orderNumber);
 
-        // Security Check: Ensure the user owns this order
         if (!order.getCustomerId().equals(userDetails.getUserId())) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Access denied"));
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Access denied"));
         }
 
-        return ResponseEntity.ok(mapToResponse(order));
+
+        return ResponseEntity.ok(order);
     }
 
+    @GetMapping("/verify/{orderId}")
+    public ResponseEntity<?> verifyOrderStatus(@PathVariable String orderId) {
+        try {
+            Order order = orderService.getOrderById(orderId);
+            return ResponseEntity.ok(Map.of("status", order.getOrderStatus().name()));
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "Order not found"));
+        }
+    }
 
     @PatchMapping("/{orderId}/cancel")
     public ResponseEntity<?> cancelOrder(
@@ -105,7 +109,6 @@ public class OrderController {
         try {
             if (userDetails == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
 
-            // Security Check
             Order existingOrder = orderService.getOrderById(orderId);
             if (!existingOrder.getCustomerId().equals(userDetails.getUserId())) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Access denied"));
@@ -125,7 +128,6 @@ public class OrderController {
         }
     }
 
-    // --- Helper Method ---
     private OrderResponse mapToResponse(Order order) {
         return OrderResponse.builder()
                 .orderId(order.getId())
@@ -135,10 +137,10 @@ public class OrderController {
                 .orderStatus(order.getOrderStatus())
                 .createdAt(order.getCreatedAt())
                 .paymentStatus(order.getPaymentStatus())
-                .itemNames(order.getItems() != null ?
-                        order.getItems().stream()
-                                .map(item -> item.getProductName() + " (x" + item.getQuantity() + ")")
-                                .collect(Collectors.toList())
+                .itemNames(order.getItems() != null
+                        ? order.getItems().stream()
+                        .map(item -> item.getProductName() + " (x" + item.getQuantity() + ")")
+                        .collect(Collectors.toList())
                         : List.of())
                 .build();
     }
