@@ -33,6 +33,66 @@ public class PaymentController {
     private final UserService userService;
     private final ObjectMapper objectMapper;
 
+    /**
+     * Retries payment initialization for an existing PENDING_PAYMENT order.
+     *
+     * WHY THIS EXISTS:
+     * When a user abandons Monnify and comes back, the frontend currently sends
+     * them through checkout again — creating a DUPLICATE order and holding more stock.
+     * This endpoint lets the frontend re-initialize payment on the EXISTING order
+     * with no new order creation, no new stock reduction.
+     *
+     * Called from PaymentCallback "Try Again" button and the Order Detail page.
+     */
+    @PostMapping("/retry/{orderId}")
+    public ResponseEntity<?> retryPayment(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable String orderId) {
+
+        if (userDetails == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Authentication required"));
+        }
+
+        Order order;
+        try {
+            order = orderService.getOrderById(orderId);
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "Order not found"));
+        }
+
+        if (!order.getCustomerId().equals(userDetails.getUserId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Access denied"));
+        }
+
+        if (order.getOrderStatus() != semicolon.africa.waylchub.model.order.OrderStatus.PENDING_PAYMENT) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", "This order has already been processed or cancelled"));
+        }
+
+        String customerName = resolveCustomerName(order.getCustomerId(), order.getCustomerEmail());
+
+        PaymentInitRequest request = PaymentInitRequest.builder()
+                .orderId(order.getId())
+                .amount(order.getGrandTotal())
+                .customerEmail(order.getCustomerEmail())
+                .customerName(customerName)
+                .paymentDescription("Payment for Order: " + order.getOrderNumber())
+                .build();
+
+        try {
+            PaymentInitResponse response = paymentService.initializePayment(request);
+            log.info("Payment retry initialized for order: {}", order.getOrderNumber());
+            return ResponseEntity.ok(response);
+        } catch (PaymentGatewayException e) {
+            log.error("Payment retry failed for order {}: {}", orderId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                    .body(Map.of("error", "Payment gateway unavailable. Please try again shortly."));
+        }
+    }
+
     @PostMapping("/init/{orderId}")
     public ResponseEntity<?> initPayment(
             @AuthenticationPrincipal CustomUserDetails userDetails,
