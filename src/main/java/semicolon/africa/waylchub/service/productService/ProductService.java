@@ -20,6 +20,23 @@ import java.math.RoundingMode;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * CONFIRMED INDEX STATUS (from model inspection):
+ *
+ *   ✅ Text search index — already defined on the Product model via:
+ *      @CompoundIndex(def = "{'name': 'text', 'description': 'text', 'brandName': 'text'}")
+ *      TextCriteria in filterProducts() will work correctly out of the box.
+ *
+ *   ✅ Duplicate variant prevention — compound unique index added to ProductVariant:
+ *      @CompoundIndex(def = "{'productId': 1, 'attributes': 1}", unique = true)
+ *      MongoDB will reject duplicate attribute combinations with DuplicateKeyException.
+ *      Add a @ExceptionHandler(DuplicateKeyException.class) in your controller advice
+ *      to return a clean 409 Conflict response.
+ *
+ *   ⚠️  Both Product and ProductVariant use @Version for optimistic locking.
+ *      updateParentAggregates() uses atomic $set via mongoTemplate to bypass @Version
+ *      entirely — safe under concurrent StockChangedEvent processing.
+ */
 @Service
 @RequiredArgsConstructor
 public class ProductService {
@@ -30,9 +47,11 @@ public class ProductService {
     private final BrandRepository brandRepository;
     private final MongoTemplate mongoTemplate;
     private final CampaignService campaignService;
-
-    // ✅ CRITICAL FIX #2: Add event publisher for async aggregate updates
     private final ApplicationEventPublisher eventPublisher;
+
+    // =========================================================================
+    // READS
+    // =========================================================================
 
     public Product getProductBySlug(String slug) {
         return productRepository.findBySlug(slug)
@@ -48,10 +67,6 @@ public class ProductService {
         return productRepository.findAll();
     }
 
-    /**
-     * ✅ CRITICAL FIX #3: Added pagination parameter
-     * Returns Page<Product> instead of loading all products into memory.
-     */
     public Page<Product> getProductsByCategorySlug(String slug, Pageable pageable) {
         ProductFilterRequest filter = new ProductFilterRequest();
         filter.setCategorySlug(slug);
@@ -61,7 +76,6 @@ public class ProductService {
     public List<Product> searchProducts(String keyword) {
         ProductFilterRequest filter = new ProductFilterRequest();
         filter.setKeyword(keyword);
-        // Search can stay unpaged for now (usually returns <100 results)
         return filterProducts(filter, Pageable.unpaged()).getContent();
     }
 
@@ -69,12 +83,17 @@ public class ProductService {
         Query query = new Query();
 
         if (filter.getKeyword() != null && !filter.getKeyword().isBlank()) {
+            // IMPORTANT: This requires a MongoDB text index on the Product collection.
+            // If no text index exists, this throws an exception at runtime.
+            // See the class-level Javadoc for the required index definition.
             query.addCriteria(TextCriteria.forDefaultLanguage().matching(filter.getKeyword()));
         }
 
         if (filter.getCategorySlug() != null) {
             Category category = categoryRepository.findBySlug(filter.getCategorySlug())
                     .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
+
+            // Matches the exact category OR any product whose lineage path includes it
             query.addCriteria(new Criteria().orOperator(
                     Criteria.where("category.id").is(category.getId()),
                     Criteria.where("categoryLineage").regex("," + category.getId() + ",")
@@ -86,32 +105,50 @@ public class ProductService {
         if (filter.getMaxPrice() != null)
             query.addCriteria(Criteria.where("maxPrice").lte(filter.getMaxPrice()));
 
-        query.addCriteria(Criteria.where("isActive").is(true)); // Filters out inactive products
+        query.addCriteria(Criteria.where("isActive").is(true));
 
         List<Product> products = mongoTemplate.find(query.with(pageable), Product.class);
 
-        // Optimize count query
+        // Reset skip/limit for the count query to avoid incorrect totals
         long count = mongoTemplate.count(query.skip(-1).limit(-1), Product.class);
 
         return PageableExecutionUtils.getPage(products, pageable, () -> count);
     }
 
+    public ProductDetailResponse getProductDetails(String productId) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+        List<ProductVariant> variants = variantRepository.findByProductId(productId);
+        return ProductDetailResponse.builder()
+                .product(product)
+                .variants(variants)
+                .build();
+    }
+
+    public List<Product> getProductsByIds(Collection<String> ids) {
+        Query query = new Query(Criteria.where("id").in(ids));
+        return mongoTemplate.find(query, Product.class);
+    }
+
+    // =========================================================================
+    // WRITES
+    // =========================================================================
+
     @Transactional
     public Product createOrUpdateProduct(ProductRequest request) {
-        Product product = request.getId() != null ?
-                productRepository.findById(request.getId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Product not found"))
+        Product product = request.getId() != null
+                ? productRepository.findById(request.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"))
                 : new Product();
 
         product.setName(request.getName());
         product.setSlug(request.getSlug());
         product.setDescription(request.getDescription());
-        product.setSpecifications(request.getSpecifications() != null ?
-                request.getSpecifications() : new HashMap<>());
-        product.setImages(request.getImages() != null ?
-                request.getImages() : new ArrayList<>());
+        product.setSpecifications(request.getSpecifications() != null
+                ? request.getSpecifications() : new HashMap<>());
+        product.setImages(request.getImages() != null
+                ? request.getImages() : new ArrayList<>());
 
-        // Explicit mapping of isActive
         if (request.getIsActive() != null) {
             product.setActive(request.getIsActive());
         }
@@ -120,7 +157,7 @@ public class ProductService {
             product.setTags(new HashSet<>(request.getTags()));
         }
 
-        // Pricing and Discount Logic
+        // Pricing + discount logic
         if (request.getDiscount() != null && request.getDiscount().compareTo(BigDecimal.ZERO) > 0) {
             if (request.getDiscount().compareTo(new BigDecimal("100")) > 0) {
                 throw new IllegalArgumentException("Discount cannot exceed 100%");
@@ -129,9 +166,11 @@ public class ProductService {
             product.setCompareAtPrice(originalPrice);
             product.setDiscount(request.getDiscount().intValue());
 
-            BigDecimal discountFactor = request.getDiscount().divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            BigDecimal discountFactor = request.getDiscount()
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
             BigDecimal amountOff = originalPrice.multiply(discountFactor);
-            product.setBasePrice(originalPrice.subtract(amountOff).setScale(2, RoundingMode.HALF_UP));
+            product.setBasePrice(originalPrice.subtract(amountOff)
+                    .setScale(2, RoundingMode.HALF_UP));
         } else {
             product.setBasePrice(request.getBasePrice());
             product.setCompareAtPrice(request.getCompareAtPrice());
@@ -164,13 +203,12 @@ public class ProductService {
         }
 
         Product saved = productRepository.save(product);
-        // ✅ BUG FIX: recalculate minPrice/maxPrice so homepage reflects the new
-        // basePrice immediately — without waiting for a variant save to trigger the event
+
+        // Immediately sync price aggregates so the homepage reflects the new
+        // basePrice without waiting for a variant save event
         updateParentAggregates(saved.getId());
         return saved;
     }
-
-
 
     @Transactional
     public ProductVariant saveVariant(VariantRequest request) {
@@ -179,17 +217,30 @@ public class ProductService {
 
         validateVariantAttributes(product, request.getAttributes());
 
+        // NOTE ON RACE CONDITION:
+        // This in-memory duplicate check is not concurrency-safe — two simultaneous
+        // requests can both pass this check and create duplicates.
+        //
+        // The reliable fix is a compound unique index at the MongoDB level:
+        //   @CompoundIndex(def = "{'productId': 1, 'attributes': 1}", unique = true)
+        // on the ProductVariant document class. MongoDB will then reject the second
+        // insert with a DuplicateKeyException, which you should catch and translate
+        // to a 409 Conflict response in your exception handler.
+        //
+        // The in-memory check below is kept as an early-exit optimisation for the
+        // common (non-concurrent) case.
         boolean duplicateExists = variantRepository.findByProductId(product.getId()).stream()
                 .anyMatch(v -> v.getAttributes().equals(request.getAttributes())
                         && !v.getId().equals(request.getId()));
 
         if (duplicateExists) {
-            throw new IllegalArgumentException("A variant with these exact attributes already exists.");
+            throw new IllegalArgumentException(
+                    "A variant with these exact attributes already exists.");
         }
 
-        ProductVariant variant = request.getId() != null ?
-                variantRepository.findById(request.getId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Variant not found"))
+        ProductVariant variant = request.getId() != null
+                ? variantRepository.findById(request.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Variant not found"))
                 : new ProductVariant();
 
         Integer oldStock = variant.getStockQuantity();
@@ -206,40 +257,21 @@ public class ProductService {
         if (request.getIsActive() != null) {
             variant.setActive(request.getIsActive());
         }
+
         boolean isNewVariant = request.getId() == null;
         if (isNewVariant && product.getActiveCampaignId() != null) {
             campaignService.applyActiveCampaignToNewVariant(variant, product.getActiveCampaignId());
         }
-        // ─────────────────────────────────────────────────────────────────────────
 
-        // Single DB write — persists the discounted price if campaign was applied above
         ProductVariant saved = variantRepository.save(variant);
 
-        int stockChange = (request.getStockQuantity() != null ? request.getStockQuantity() : 0) -
-                (oldStock != null ? oldStock : 0);
+        int stockChange = (request.getStockQuantity() != null ? request.getStockQuantity() : 0)
+                - (oldStock != null ? oldStock : 0);
 
         eventPublisher.publishEvent(new StockChangedEvent(
-                product.getId(),
-                saved.getId(),
-                stockChange
-        ));
+                product.getId(), saved.getId(), stockChange));
 
         return saved;
-    }
-
-    public ProductDetailResponse getProductDetails(String productId) {
-        // 1. Fetch Product
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
-
-        // 2. Fetch Variants for this Product
-        List<ProductVariant> variants = variantRepository.findByProductId(productId);
-
-        // 3. Return Combined Data
-        return ProductDetailResponse.builder()
-                .product(product)
-                .variants(variants)
-                .build();
     }
 
     @Transactional
@@ -257,12 +289,8 @@ public class ProductService {
 
         variantRepository.delete(variant);
 
-        // Publish event to reduce parent stock by the deleted variant's amount
         eventPublisher.publishEvent(new StockChangedEvent(
-                productId,
-                variantId,
-                -variant.getStockQuantity()
-        ));
+                productId, variantId, -variant.getStockQuantity()));
     }
 
     @Transactional
@@ -290,8 +318,9 @@ public class ProductService {
     }
 
     /**
-     * Atomic stock reduction for high concurrency (e.g., checkout).
-     * Now uses event publishing to avoid OptimisticLockingFailureException on the parent document.
+     * Atomically reduces stock for a variant. Uses a conditional MongoDB update
+     * (stock >= quantity) to prevent overselling without requiring application-level
+     * locking or transactions.
      */
     public void reduceStockAtomic(String variantId, int quantity) {
         ProductVariant variant = variantRepository.findById(variantId)
@@ -301,84 +330,112 @@ public class ProductService {
 
         Query query = new Query(
                 Criteria.where("id").is(variantId)
-                        .and("stockQuantity").gte(quantity)
-        );
+                        .and("stockQuantity").gte(quantity));
         Update update = new Update().inc("stockQuantity", -quantity);
 
         var result = mongoTemplate.updateFirst(query, update, ProductVariant.class);
 
         if (result.getModifiedCount() == 0) {
-            throw new RuntimeException("Insufficient stock");
+            throw new RuntimeException("Insufficient stock for variant: " + variantId);
         }
 
         eventPublisher.publishEvent(new StockChangedEvent(
-                variant.getProductId(),
-                variantId,
-                -quantity
-        ));
+                variant.getProductId(), variantId, -quantity));
     }
 
     public void addStockAtomic(String variantId, String productId, int quantity) {
         Query query = new Query(Criteria.where("id").is(variantId));
         Update update = new Update().inc("stockQuantity", quantity);
-        mongoTemplate.updateFirst(query, update, ProductVariant.class);
 
-        eventPublisher.publishEvent(new StockChangedEvent(
-                productId,
-                variantId,
-                quantity
-        ));
+        var result = mongoTemplate.updateFirst(query, update, ProductVariant.class);
+
+        // FIX: Mirror the result check from reduceStockAtomic.
+        // Without this, a ghost StockChangedEvent fires even if the variant was
+        // deleted between the caller obtaining the variantId and this method running,
+        // which would silently corrupt the parent product's aggregate totals.
+        if (result.getModifiedCount() == 0) {
+            throw new ResourceNotFoundException(
+                    "Variant not found or stock update failed: " + variantId);
+        }
+
+        eventPublisher.publishEvent(new StockChangedEvent(productId, variantId, quantity));
     }
 
-    // Add this method to fetch multiple parent products in one query
-    public List<Product> getProductsByIds(Collection<String> ids) {
-        Query query = new Query(Criteria.where("id").in(ids));
-        return mongoTemplate.find(query, Product.class);
-    }
+    // =========================================================================
+    // AGGREGATE HELPERS
+    // Called by StockChangedEvent listener and after product price changes.
+    // Uses targeted mongoTemplate $set updates — safe under concurrent execution.
+    // =========================================================================
 
     /**
-     * Made public so StockChangeEventListener can call it.
-     * Should only be called by the listener or admin-level operations (like applyDiscount).
+     * Updates totalStock, minPrice, and maxPrice on the parent Product document.
+     *
+     * CONCURRENCY FIX: The original implementation used a read-modify-write cycle
+     * (findById → mutate → save). Because Product has @Version, concurrent calls
+     * from multiple StockChangedEvent listener threads would race and throw
+     * OptimisticLockingFailureException on the losing thread, silently leaving
+     * aggregate totals stale.
+     *
+     * Fix: compute the new values in application memory (still requires one read
+     * of all variants), then write ONLY the three aggregate fields via a targeted
+     * mongoTemplate $set update. This bypasses @Version entirely because we are
+     * not replacing the whole document — Spring Data only increments @Version on
+     * full-document save() calls, not on mongoTemplate partial updates.
      */
     public void updateParentAggregates(String productId) {
-        Product product = productRepository.findById(productId).orElseThrow();
+        // We still need to read variants to compute the new values
         List<ProductVariant> variants = variantRepository.findByProductId(productId);
 
+        final BigDecimal newMin;
+        final BigDecimal newMax;
+        final int newTotalStock;
+
         if (variants.isEmpty()) {
-            product.setTotalStock(0);
-            BigDecimal base = product.getBasePrice() != null ?
-                    product.getBasePrice() : BigDecimal.ZERO;
-            product.setMinPrice(base);
-            product.setMaxPrice(base);
+            // No variants: fall back to the product's own basePrice
+            // We need the product only in the empty-variants case for basePrice
+            Product product = productRepository.findById(productId)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Product not found during aggregate update: " + productId));
+            BigDecimal base = product.getBasePrice() != null
+                    ? product.getBasePrice() : BigDecimal.ZERO;
+            newMin = base;
+            newMax = base;
+            newTotalStock = 0;
         } else {
-            int totalStock = variants.stream()
+            newTotalStock = variants.stream()
                     .filter(ProductVariant::isManageStock)
                     .mapToInt(v -> v.getStockQuantity() == null ? 0 : v.getStockQuantity())
                     .sum();
 
-            BigDecimal min = variants.stream()
+            newMin = variants.stream()
                     .map(ProductVariant::getPrice)
                     .filter(Objects::nonNull)
                     .min(BigDecimal::compareTo)
                     .orElse(BigDecimal.ZERO);
 
-            BigDecimal max = variants.stream()
+            newMax = variants.stream()
                     .map(ProductVariant::getPrice)
                     .filter(Objects::nonNull)
                     .max(BigDecimal::compareTo)
                     .orElse(BigDecimal.ZERO);
-
-            product.setTotalStock(totalStock);
-            product.setMinPrice(min);
-            product.setMaxPrice(max);
         }
 
-        productRepository.save(product);
+        // Atomic partial update — does NOT touch @Version, safe under concurrency
+        Query query = new Query(Criteria.where("id").is(productId));
+        Update update = new Update()
+                .set("totalStock", newTotalStock)
+                .set("minPrice", newMin)
+                .set("maxPrice", newMax);
+
+        mongoTemplate.updateFirst(query, update, Product.class);
     }
 
+    // =========================================================================
+    // VALIDATION
+    // =========================================================================
+
     private void validateVariantAttributes(Product product, Map<String, String> attributes) {
-        if (product.getVariantOptions() == null || product.getVariantOptions().isEmpty())
-            return;
+        if (product.getVariantOptions() == null || product.getVariantOptions().isEmpty()) return;
 
         for (Map.Entry<String, String> entry : attributes.entrySet()) {
             VariantOption option = product.getVariantOptions().stream()
