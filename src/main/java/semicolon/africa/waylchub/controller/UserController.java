@@ -3,6 +3,7 @@ package semicolon.africa.waylchub.controller;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -21,7 +22,7 @@ public class UserController {
     @GetMapping("/me")
     public ResponseEntity<UserResponse> getCurrentProfile(
             @AuthenticationPrincipal CustomUserDetails userDetails) {
-        if (userDetails == null) throw new RuntimeException("Unauthenticated request");
+        if (userDetails == null) throw new AccessDeniedException("Unauthenticated");
         return ResponseEntity.ok(userService.getCurrentUser(userDetails.getUserId()));
     }
 
@@ -29,19 +30,16 @@ public class UserController {
     public ResponseEntity<UserResponse> updateMyAddress(
             @AuthenticationPrincipal CustomUserDetails userDetails,
             @Valid @RequestBody UpdateUserAddressRequest request) {
-        if (userDetails == null) throw new RuntimeException("Unauthenticated request");
+        if (userDetails == null) throw new AccessDeniedException("Unauthenticated");
         return ResponseEntity.ok(userService.updateUserAddress(userDetails.getUserId(), request));
     }
 
     /**
-     * Promotes any registered user to ADMIN role.
-     * Only callable by an existing ADMIN — secured at the method level.
-     *
-     * For your FIRST ever admin: use AdminDataInitializer (see that file).
-     * After that, use this endpoint from Postman with your admin JWT.
+     * hasAuthority('ROLE_ADMIN') = exact string match on the granted authority.
+     * This is the safest form — unaffected by GrantedAuthorityDefaults configuration.
      */
     @PutMapping("/promote/{email}")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<UserResponse> promoteUserToAdmin(@PathVariable String email) {
         return ResponseEntity.ok(userService.promoteToAdmin(email));
     }

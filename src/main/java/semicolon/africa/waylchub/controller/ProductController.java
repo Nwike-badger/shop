@@ -31,7 +31,7 @@ public class ProductController {
      * create products on your storefront.
      */
     @PostMapping
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ProductResponse> addProduct(@Valid @RequestBody ProductRequest request) {
         Product savedProduct = productService.createOrUpdateProduct(request);
         return new ResponseEntity<>(mapToResponse(savedProduct), HttpStatus.CREATED);
@@ -41,7 +41,7 @@ public class ProductController {
      * ✅ FIX: Added @PreAuthorize — variants are pricing data, must be admin-only.
      */
     @PostMapping("/variants")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ProductVariant> addVariant(@Valid @RequestBody VariantRequest request) {
         ProductVariant savedVariant = productService.saveVariant(request);
         return new ResponseEntity<>(savedVariant, HttpStatus.CREATED);
@@ -58,7 +58,7 @@ public class ProductController {
      * ✅ NEW: Delete an entire product and all its variants
      */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<Void> deleteProduct(@PathVariable String id) {
         productService.deleteProduct(id);
         return ResponseEntity.noContent().build();
@@ -68,7 +68,7 @@ public class ProductController {
      * ✅ NEW: Delete a specific variant
      */
     @DeleteMapping("/variants/{variantId}")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<Void> deleteVariant(@PathVariable String variantId) {
         productService.deleteVariant(variantId);
         return ResponseEntity.noContent().build();

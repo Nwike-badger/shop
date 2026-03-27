@@ -28,7 +28,7 @@ public class DataSeeder implements CommandLineRunner {
     @Override
     public void run(String... args) {
 
-        System.out.println("🚀 STARTING FULL ADMIN DATA SEEDER");
+        System.out.println("🚀 STARTING FULL ADMIN DATA SEEDER (FASHION FOCUSED)");
 
         ensureSearchIndex();
         wipeDevDatabase();
@@ -63,14 +63,15 @@ public class DataSeeder implements CommandLineRunner {
 
     private void createBrands() {
         List<String> brands = List.of(
-                "Apple", "Samsung", "Sony", "Nike", "Adidas",
-                "Zara", "Logitech", "Dyson", "Felicity", "HP", "Dell", "Nespresso"
+                "Apple", "Samsung", "Sony", "Nike", "Adidas", "Zara", "Logitech", "Dyson", "HP", "Nespresso",
+                // New Fashion Brands
+                "Gucci", "Levis", "H&M", "Ray-Ban", "Casio", "Puma", "ASOS"
         );
 
         for (String name : brands) {
             Brand brand = new Brand();
             brand.setName(name);
-            brand.setSlug(name.toLowerCase().replace(" ", "-"));
+            brand.setSlug(name.toLowerCase().replace(" ", "-").replace("&", "and"));
             brandRepo.save(brand);
         }
     }
@@ -78,7 +79,7 @@ public class DataSeeder implements CommandLineRunner {
     // ----------------------------------------------------------------
 
     private Category electronics, smartphones, laptops, audio;
-    private Category fashion, men, sneakers, women;
+    private Category fashion, men, sneakers, women, accessories, watches;
     private Category home, kitchen, furniture;
 
     private void createCategoryTree() {
@@ -87,10 +88,13 @@ public class DataSeeder implements CommandLineRunner {
         laptops = saveCat("Laptops", "laptops", electronics, "https://images.unsplash.com/photo-1496181133206");
         audio = saveCat("Audio", "audio", electronics, "https://images.unsplash.com/photo-1505740420928");
 
+        // Expanded Fashion Categories
         fashion = saveCat("Fashion", "fashion", null, "https://images.unsplash.com/photo-1445205170230");
         men = saveCat("Men", "men", fashion, "https://images.unsplash.com/photo-1617137968427");
         sneakers = saveCat("Sneakers", "sneakers", men, "https://images.unsplash.com/photo-1552346154");
         women = saveCat("Women", "women", fashion, "https://images.unsplash.com/photo-1483985988355");
+        accessories = saveCat("Accessories", "accessories", fashion, "https://images.unsplash.com/photo-1523779105320-d1cd346ff52b");
+        watches = saveCat("Watches", "watches", accessories, "https://images.unsplash.com/photo-1524805444758-089113d48a6d");
 
         home = saveCat("Home", "home", null, "https://images.unsplash.com/photo-1484101403633");
         kitchen = saveCat("Kitchen", "kitchen", home, "https://images.unsplash.com/photo-1556911220");
@@ -112,16 +116,189 @@ public class DataSeeder implements CommandLineRunner {
     // ----------------------------------------------------------------
 
     private void seedProducts() {
+        // Tech (Kept for variety)
         createIphone();
         createMacbook();
         createSonyHeadphones();
+
+        // Original Fashion
         createNikeSneakers();
         createDress();
-        createCoffeeMachine();
         createIrregularTShirt();
+
+        // New Fashion Products
+        createLevisJeans();
+        createGucciBelt();
+        createAdidasUltraboost();
+        createHandMBasicHoodie();
+        createRayBanAviators();
+        createCasioVintageWatch();
+        createASOSEveningGown();
+        createPumaTracksuit();
+        createZaraWinterCoat();
+
+        // Home / Edge cases
+        createCoffeeMachine();
         createInactiveProduct();
     }
 
+    // ----------------------------------------------------------------
+    // NEW FASHION PRODUCTS
+    // ----------------------------------------------------------------
+
+    private void createLevisJeans() {
+        // Standard variant matrix with CompareAtPrices (Discounts on variants)
+        createProductWithVariants(
+                "Levi's 501 Original Fit Jeans", "levis-501-original", men, "levis",
+                new BigDecimal("45000"), null, BigDecimal.ZERO, true,
+                "The blueprint for every pair of jeans in existence.",
+                mediaGallery(new String[]{"https://images.unsplash.com/photo-1542272604-787c3835535d", "https://images.unsplash.com/photo-1604198453847-0a6240472e34"}, null),
+                List.of("fashion", "denim", "jeans", "casual"),
+                Map.of("Material", "100% Cotton", "Fit", "Straight"),
+                Map.of("Color", List.of("Blue", "Black"), "Waist", List.of("30", "32", "34")),
+                List.of(
+                        new VariantConfig("LV501-BLU-30", new BigDecimal("45000"), new BigDecimal("55000"), 12, Map.of("Color", "Blue", "Waist", "30"), true),
+                        new VariantConfig("LV501-BLU-32", new BigDecimal("45000"), new BigDecimal("55000"), 20, Map.of("Color", "Blue", "Waist", "32"), true),
+                        new VariantConfig("LV501-BLK-32", new BigDecimal("45000"), null, 8, Map.of("Color", "Black", "Waist", "32"), true)
+                )
+        );
+    }
+
+    private void createGucciBelt() {
+        // Luxury item, high price, single stock variation
+        createProductWithVariants(
+                "Gucci GG Marmont Leather Belt", "gucci-gg-belt", accessories, "gucci",
+                new BigDecimal("350000"), null, BigDecimal.ZERO, true,
+                "Classic black leather belt with the iconic Double G buckle.",
+                mediaGallery(new String[]{"https://images.unsplash.com/photo-1553062407-98eeb64c6a62"}, null),
+                List.of("fashion", "luxury", "accessories", "leather"),
+                Map.of("Material", "Calfskin Leather", "Hardware", "Antiqued Brass"),
+                Map.of("Size", List.of("85cm", "90cm", "95cm")),
+                List.of(
+                        new VariantConfig("GUC-BLT-85", new BigDecimal("350000"), null, 2, Map.of("Size", "85cm"), true),
+                        new VariantConfig("GUC-BLT-90", new BigDecimal("350000"), null, 5, Map.of("Size", "90cm"), true)
+                )
+        );
+    }
+
+    private void createAdidasUltraboost() {
+        // EDGE CASE: Out of stock heavily
+        createProductWithVariants(
+                "Adidas Ultraboost 1.0", "adidas-ultraboost-1", sneakers, "adidas",
+                new BigDecimal("120000"), null, BigDecimal.ZERO, true,
+                "High-performance running shoes with responsive cushioning.",
+                mediaGallery(new String[]{"https://images.unsplash.com/photo-1518002171953-a080ee817e1f"}, null),
+                List.of("sneakers", "running", "adidas", "sports"),
+                Map.of("Sole", "Rubber", "Upper", "Primeknit"),
+                Map.of("Size", List.of("40", "41", "42")),
+                List.of(
+                        new VariantConfig("UB-40", new BigDecimal("120000"), null, 0, Map.of("Size", "40"), true), // OOS
+                        new VariantConfig("UB-41", new BigDecimal("120000"), null, 0, Map.of("Size", "41"), true), // OOS
+                        new VariantConfig("UB-42", new BigDecimal("120000"), null, 3, Map.of("Size", "42"), true)
+                )
+        );
+    }
+
+    private void createHandMBasicHoodie() {
+        // 20% parent discount
+        createProductWithVariants(
+                "H&M Relaxed Fit Hoodie", "hm-relaxed-hoodie", men, "handm",
+                new BigDecimal("25000"), null, new BigDecimal("20"), true,
+                "Soft, comfortable cotton-blend hoodie for everyday wear.",
+                mediaGallery(new String[]{"https://images.unsplash.com/photo-1556821840-3a63f95609a7"}, null),
+                List.of("fashion", "casual", "hoodie", "sale"),
+                Map.of("Material", "80% Cotton, 20% Polyester"),
+                Map.of("Color", List.of("Grey", "Black"), "Size", List.of("M", "L", "XL")),
+                List.of(
+                        new VariantConfig("HM-HD-GRY-M", new BigDecimal("25000"), null, 15, Map.of("Color", "Grey", "Size", "M"), true),
+                        new VariantConfig("HM-HD-GRY-L", new BigDecimal("25000"), null, 25, Map.of("Color", "Grey", "Size", "L"), true),
+                        new VariantConfig("HM-HD-BLK-XL", new BigDecimal("25000"), null, 10, Map.of("Color", "Black", "Size", "XL"), true)
+                )
+        );
+    }
+
+    private void createRayBanAviators() {
+        // Simple product, no variants
+        createProductNoVariants(
+                "Ray-Ban Classic Aviator Sunglasses", "rayban-aviator-classic", accessories, "ray-ban",
+                new BigDecimal("115000"), BigDecimal.ZERO, true,
+                "Currently one of the most iconic sunglass models in the world.",
+                mediaGallery(new String[]{"https://images.unsplash.com/photo-1511499767150-a48a237f0083"}, null),
+                List.of("fashion", "accessories", "sunglasses", "summer")
+        );
+    }
+
+    private void createCasioVintageWatch() {
+        // EDGE CASE: Completely out of stock parent product
+        createProductWithVariants(
+                "Casio Vintage Digital Watch", "casio-vintage-gold", watches, "casio",
+                new BigDecimal("45000"), null, BigDecimal.ZERO, true,
+                "Retro gold-tone digital watch.",
+                mediaGallery(new String[]{"https://images.unsplash.com/photo-1524805444758-089113d48a6d"}, null),
+                List.of("fashion", "watch", "accessories", "vintage"),
+                Map.of("Movement", "Digital", "Water Resistance", "30m"),
+                Map.of("Color", List.of("Gold", "Silver")),
+                List.of(
+                        new VariantConfig("CAS-V-GLD", new BigDecimal("45000"), null, 0, Map.of("Color", "Gold"), true),
+                        new VariantConfig("CAS-V-SLV", new BigDecimal("40000"), null, 0, Map.of("Color", "Silver"), true)
+                )
+        );
+    }
+
+    private void createASOSEveningGown() {
+        // EDGE CASE: Irregular variant matrix
+        createProductWithVariants(
+                "ASOS Design Satin Maxi Dress", "asos-satin-maxi", women, "asos",
+                new BigDecimal("65000"), null, BigDecimal.ZERO, true,
+                "Stunning satin maxi dress with cowl neck.",
+                mediaGallery(new String[]{"https://images.unsplash.com/photo-1566150905458-1bf1fc113f0d"}, null),
+                List.of("fashion", "evening", "dress", "party"),
+                Map.of("Material", "100% Polyester", "Care", "Dry clean only"),
+                Map.of("Color", List.of("Emerald", "Navy"), "Size", List.of("UK 8", "UK 10", "UK 12")),
+                List.of(
+                        new VariantConfig("AS-EM-8", new BigDecimal("65000"), null, 5, Map.of("Color", "Emerald", "Size", "UK 8"), true),
+                        new VariantConfig("AS-EM-12", new BigDecimal("65000"), null, 2, Map.of("Color", "Emerald", "Size", "UK 12"), true), // Skipped size 10
+                        new VariantConfig("AS-NV-10", new BigDecimal("65000"), null, 4, Map.of("Color", "Navy", "Size", "UK 10"), true)
+                )
+        );
+    }
+
+    private void createPumaTracksuit() {
+        // EDGE CASE: Product is globally inactive
+        createProductWithVariants(
+                "Puma T7 Tracksuit Set", "puma-t7-tracksuit", men, "puma",
+                new BigDecimal("85000"), null, BigDecimal.ZERO, false, // INACTIVE
+                "Classic T7 track jacket and pants combo. Dropping next season.",
+                mediaGallery(new String[]{"https://images.unsplash.com/photo-1515886657613-9f3515b0c78f"}, null),
+                List.of("fashion", "sportswear", "tracksuit", "puma"),
+                Map.of("Fit", "Regular", "Material", "Polyester"),
+                Map.of("Size", List.of("M", "L", "XL")),
+                List.of(
+                        new VariantConfig("PM-TS-M", new BigDecimal("85000"), null, 10, Map.of("Size", "M"), true),
+                        new VariantConfig("PM-TS-L", new BigDecimal("85000"), null, 10, Map.of("Size", "L"), true)
+                )
+        );
+    }
+
+    private void createZaraWinterCoat() {
+        // Discounted winter clearance
+        createProductWithVariants(
+                "Zara Wool Blend Tailored Coat", "zara-wool-coat", women, "zara",
+                new BigDecimal("120000"), new BigDecimal("180000"), new BigDecimal("33"), true,
+                "Longline tailored coat perfect for winter layering.",
+                mediaGallery(new String[]{"https://images.unsplash.com/photo-1539533113208-f6df8cc8b543"}, null),
+                List.of("fashion", "outerwear", "winter", "coat", "clearance"),
+                Map.of("Material", "70% Wool, 30% Polyamide"),
+                Map.of("Size", List.of("S", "M")),
+                List.of(
+                        new VariantConfig("ZR-CT-S", new BigDecimal("120000"), new BigDecimal("180000"), 4, Map.of("Size", "S"), true),
+                        new VariantConfig("ZR-CT-M", new BigDecimal("120000"), new BigDecimal("180000"), 1, Map.of("Size", "M"), true)
+                )
+        );
+    }
+
+    // ----------------------------------------------------------------
+    // ORIGINAL PRODUCTS (Preserved for system stability)
     // ----------------------------------------------------------------
 
     private void createIphone() {
@@ -164,7 +341,6 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     private void createSonyHeadphones() {
-        // EDGE CASE: 10% Discounted Product at the Parent Level
         createProductWithVariants(
                 "Sony WH-1000XM5", "sony-xm5", audio, "sony",
                 new BigDecimal("450000"), null, new BigDecimal("10"), true,
@@ -183,26 +359,22 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     private void createNikeSneakers() {
-        // EDGE CASE: Zero Stock Variant
         createProductWithVariants(
                 "Nike Air Jordan 1 Retro", "jordan-1-retro", sneakers, "nike",
                 new BigDecimal("250000"), null, BigDecimal.ZERO, true,
                 "Classic Jordan silhouette.",
-                mediaGallery(
-                        new String[]{"https://images.unsplash.com/photo-1552346154"}, null
-                ),
+                mediaGallery(new String[]{"https://images.unsplash.com/photo-1552346154"}, null),
                 List.of("sneakers", "nike"),
                 Map.of("Material", "Leather"),
                 Map.of("Size", List.of("42", "43", "44")),
                 List.of(
                         new VariantConfig("AJ1-42", new BigDecimal("250000"), null, 4, Map.of("Size", "42"), true),
-                        new VariantConfig("AJ1-44", new BigDecimal("250000"), null, 0, Map.of("Size", "44"), true) // OUT OF STOCK
+                        new VariantConfig("AJ1-44", new BigDecimal("250000"), null, 0, Map.of("Size", "44"), true)
                 )
         );
     }
 
     private void createIrregularTShirt() {
-        // EDGE CASE: Irregular variant combinations (No 'Blue - Small')
         createProductWithVariants(
                 "Zara Essential Basic Tee", "zara-basic-tee", men, "zara",
                 new BigDecimal("15000"), null, BigDecimal.ZERO, true,
@@ -221,10 +393,9 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     private void createInactiveProduct() {
-        // EDGE CASE: Inactive product (should not show up in regular customer searches)
         createProductNoVariants(
                 "Dyson V15 Detect (Coming Soon)", "dyson-v15", home, "dyson",
-                new BigDecimal("850000"), BigDecimal.ZERO, false, // isActive = false
+                new BigDecimal("850000"), BigDecimal.ZERO, false,
                 "Next generation vacuum cleaner. Launching next month.",
                 mediaGallery(new String[]{"https://images.unsplash.com/photo-1558317374-067fb5f30001"}, null),
                 List.of("vacuum", "home", "cleaning")

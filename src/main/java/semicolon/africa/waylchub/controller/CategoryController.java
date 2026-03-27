@@ -42,3 +42,9 @@ public class CategoryController {
         return new ResponseEntity<>(categoryService.createCategory(request), HttpStatus.CREATED);
     }
 }
+
+//@PostMapping
+//@PreAuthorize("hasRole('ROLE_ADMIN')")
+//public ResponseEntity<Category> createCategory(@Valid @RequestBody CategoryRequest request) {
+//    return new ResponseEntity<>(categoryService.createCategory(request), HttpStatus.CREATED);
+//}
