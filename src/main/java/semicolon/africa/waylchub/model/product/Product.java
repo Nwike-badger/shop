@@ -20,11 +20,17 @@ import java.util.*;
 @AllArgsConstructor
 @Document(collection = "products")
 @CompoundIndexes({
-
+        // For fast sorting/filtering on standard category pages
         @CompoundIndex(name = "category_price", def = "{'categorySlug': 1, 'minPrice': 1}"),
 
-        @CompoundIndex(name = "lineage_price", def = "{'categoryLineage': 1, 'minPrice': 1}"),
-        @CompoundIndex(name = "text_search", def = "{'name': 'text', 'description': 'text', 'brandName': 'text'}")
+        // For fast sub-category tree expansion (Replaces the old regex lineage search)
+        @CompoundIndex(name = "lineage_ids_price", def = "{'categoryLineageIds': 1, 'minPrice': 1}"),
+
+        // For smart search brand-matching strategy
+        @CompoundIndex(name = "brand_active", def = "{'brandName': 1, 'isActive': 1}")
+
+        // ❌ NO TEXT INDEX HERE!
+        // We removed it because MongoIndexConfig.java handles the smart weighted text index now.
 })
 public class Product {
 

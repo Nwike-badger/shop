@@ -30,7 +30,7 @@ public class DataSeeder implements CommandLineRunner {
 
         System.out.println("🚀 STARTING FULL ADMIN DATA SEEDER (FASHION FOCUSED)");
 
-        ensureSearchIndex();
+
         wipeDevDatabase();
         createBrands();
         createCategoryTree();
@@ -41,16 +41,7 @@ public class DataSeeder implements CommandLineRunner {
 
     // ----------------------------------------------------------------
 
-    private void ensureSearchIndex() {
-        mongoTemplate.indexOps(Product.class).ensureIndex(
-                new TextIndexDefinition.TextIndexDefinitionBuilder()
-                        .onField("name")
-                        .onField("description")
-                        .onField("brandName")
-                        .named("text_search")
-                        .build()
-        );
-    }
+
 
     private void wipeDevDatabase() {
         variantRepo.deleteAll();
