@@ -74,22 +74,47 @@ public class DataSeeder implements CommandLineRunner {
     private Category home, kitchen, furniture;
 
     private void createCategoryTree() {
-        electronics = saveCat("Electronics", "electronics", null, "https://images.unsplash.com/photo-1498049860654");
-        smartphones = saveCat("Smartphones", "smartphones", electronics, "https://images.unsplash.com/photo-1511707171634");
-        laptops = saveCat("Laptops", "laptops", electronics, "https://images.unsplash.com/photo-1496181133206");
-        audio = saveCat("Audio", "audio", electronics, "https://images.unsplash.com/photo-1505740420928");
 
-        // Expanded Fashion Categories
-        fashion = saveCat("Fashion", "fashion", null, "https://images.unsplash.com/photo-1445205170230");
-        men = saveCat("Men", "men", fashion, "https://images.unsplash.com/photo-1617137968427");
-        sneakers = saveCat("Sneakers", "sneakers", men, "https://images.unsplash.com/photo-1552346154");
-        women = saveCat("Women", "women", fashion, "https://images.unsplash.com/photo-1483985988355");
-        accessories = saveCat("Accessories", "accessories", fashion, "https://images.unsplash.com/photo-1523779105320-d1cd346ff52b");
-        watches = saveCat("Watches", "watches", accessories, "https://images.unsplash.com/photo-1524805444758-089113d48a6d");
+        electronics = saveCat("Electronics", "electronics", null,
+                "https://images.unsplash.com/photo-1498049860654-4d5a1c0f4a1b?w=800&q=80");
 
-        home = saveCat("Home", "home", null, "https://images.unsplash.com/photo-1484101403633");
-        kitchen = saveCat("Kitchen", "kitchen", home, "https://images.unsplash.com/photo-1556911220");
-        furniture = saveCat("Furniture", "furniture", home, "https://images.unsplash.com/photo-1555041469");
+        smartphones = saveCat("Smartphones", "smartphones", electronics,
+                "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=800&q=80");
+
+        laptops = saveCat("Laptops", "laptops", electronics,
+                "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=800&q=80");
+
+        audio = saveCat("Audio", "audio", electronics,
+                "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80");
+
+        // Fashion
+        fashion = saveCat("Fashion", "fashion", null,
+                "https://images.unsplash.com/photo-1445205170230-053b83016050?w=800&q=80");
+
+        men = saveCat("Men", "men", fashion,
+                "https://images.unsplash.com/photo-1617137968427-85924c800a22?w=800&q=80");
+
+        sneakers = saveCat("Sneakers", "sneakers", men,
+                "https://images.unsplash.com/photo-1552346154-21d32810aba3?w=800&q=80");
+
+        women = saveCat("Women", "women", fashion,
+                "https://images.unsplash.com/photo-1483985988355-763728e1935b?w=800&q=80");
+
+        accessories = saveCat("Accessories", "accessories", fashion,
+                "https://images.unsplash.com/photo-1523779105320-d1cd346ff52b?w=800&q=80");
+
+        watches = saveCat("Watches", "watches", accessories,
+                "https://images.unsplash.com/photo-1524805444758-089113d48a6d?w=800&q=80");
+
+        // Home
+        home = saveCat("Home", "home", null,
+                "https://images.unsplash.com/photo-1484101403633-562f891dc89a?w=800&q=80");
+
+        kitchen = saveCat("Kitchen", "kitchen", home,
+                "https://images.unsplash.com/photo-1556911220-bff31c812dba?w=800&q=80");
+
+        furniture = saveCat("Furniture", "furniture", home,
+                "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=800&q=80");
     }
 
     private Category saveCat(String name, String slug, Category parent, String img) {

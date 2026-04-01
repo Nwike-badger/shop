@@ -16,6 +16,7 @@ public class CategoryTreeResponse implements Serializable {
     private String id;
     private String name;
     private String slug;
+    private String imageUrl;
 
     // FIX: initialize to empty list, never null
     private List<CategoryTreeResponse> children = new ArrayList<>();

@@ -78,7 +78,9 @@ public class SecurityConfig {
                         ).permitAll()
 
                         // ── Cart — guests send X-Guest-ID instead of JWT ────────────────
-                        .requestMatchers("/api/v1/cart/**").permitAll()
+                        .requestMatchers(
+                                "/api/v1/cart/**",
+                                "/api/v1/wishlist/**").permitAll()
 
                         // ── Monnify webhook — no JWT, must be open ──────────────────────
                         .requestMatchers("/api/v1/payments/webhook/**").permitAll()

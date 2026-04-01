@@ -164,6 +164,7 @@ public class CategoryService {
         dto.setId(category.getId());
         dto.setName(category.getName());
         dto.setSlug(category.getSlug());
+        dto.setImageUrl(category.getImageUrl());
 
         List<Category> children = childrenMap.getOrDefault(
                 category.getId(), Collections.emptyList());
