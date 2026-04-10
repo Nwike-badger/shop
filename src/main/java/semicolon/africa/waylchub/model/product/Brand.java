@@ -23,4 +23,5 @@ public class Brand {
     private String logoUrl;
 
     private String description;
+    private String website;
 }

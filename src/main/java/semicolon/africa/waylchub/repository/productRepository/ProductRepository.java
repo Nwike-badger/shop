@@ -16,4 +16,7 @@ public interface ProductRepository extends MongoRepository<Product, String> {
 
     // Optimized: Search by Name
     List<Product> findByNameContainingIgnoreCase(String name);
+
+    boolean existsByBrandSlug(String brandSlug);
+    long    countByBrandSlug(String brandSlug);
 }

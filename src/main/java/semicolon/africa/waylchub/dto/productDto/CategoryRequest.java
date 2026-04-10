@@ -11,6 +11,8 @@ public class CategoryRequest {
     @NotNull(message = "Slug is required")
     private String slug;
 
-    private String parentSlug; // Optional: if null, it's a root category
+    private String parentSlug;
     private String description;
+
+    private String imageUrl;
 }

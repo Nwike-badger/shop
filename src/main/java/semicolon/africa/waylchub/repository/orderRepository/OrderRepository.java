@@ -20,6 +20,8 @@ public interface OrderRepository extends MongoRepository<Order, String> {
     Page<Order> findByCustomerId(String customerId, Pageable pageable);
     List<Order> findByOrderStatusAndCreatedAtBefore(OrderStatus status, LocalDateTime cutoff);
 
+
     // Useful for admin dashboards
     Page<Order> findByOrderStatus(OrderStatus status, Pageable pageable);
+
 }

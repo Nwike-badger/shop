@@ -230,6 +230,14 @@ public class OrderService {
         }
     }
 
+    public Page<Order> getAllOrders(Pageable pageable) {
+        return orderRepository.findAll(pageable);
+    }
+
+    public Page<Order> getOrdersByStatus(OrderStatus status, Pageable pageable) {
+        return orderRepository.findByOrderStatus(status, pageable);
+    }
+
     @Transactional
     public Order cancelOrder(String orderId, String reason) {
         Order order = orderRepository.findById(orderId)

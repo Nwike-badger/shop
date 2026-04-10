@@ -14,46 +14,68 @@ import semicolon.africa.waylchub.repository.productRepository.CategoryRepository
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * CategoryService — manages the full product category taxonomy.
+ *
+ * Fixes applied vs original:
+ *  1. createCategory now persists imageUrl from the request.
+ *  2. updateCategory now persists imageUrl from the request.
+ *  3. updateCategory correctly promotes a child to root when
+ *     parentSlug is explicitly passed as an empty string.
+ *  4. deleteCategory provides a clean, descriptive error so the
+ *     frontend can surface exactly why deletion was blocked.
+ *
+ * Ensure CategoryRequest has: name, slug, parentSlug, description, imageUrl.
+ */
 @Service
 @RequiredArgsConstructor
 public class CategoryService {
 
     private final CategoryRepository categoryRepository;
 
-    // =========================================================================
-    // 1. CREATE
-    // =========================================================================
+    /* ───────────────────────────────────────────────────────────
+       CREATE
+    ─────────────────────────────────────────────────────────── */
 
     @Transactional
     @CacheEvict(value = {"categoryTree", "featuredCategories"}, allEntries = true)
     public Category createCategory(CategoryRequest req) {
+        // Prevent duplicate slugs
+        if (categoryRepository.findBySlug(req.getSlug()).isPresent()) {
+            throw new IllegalArgumentException(
+                    "A category with slug '" + req.getSlug() + "' already exists.");
+        }
+
         Category cat = new Category();
         cat.setName(req.getName());
         cat.setSlug(req.getSlug());
         cat.setDescription(req.getDescription());
+        cat.setImageUrl(req.getImageUrl()); // ✅ FIX: was missing in original
 
-        if (req.getParentSlug() != null && !req.getParentSlug().isEmpty()) {
+        if (req.getParentSlug() != null && !req.getParentSlug().isBlank()) {
             Category parent = categoryRepository.findBySlug(req.getParentSlug())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Parent category not found: " + req.getParentSlug()));
 
             cat.setParent(parent);
 
-            // Lineage: parent's lineage + parent's ID + ","
-            String parentLineage = parent.getLineage() == null ? "," : parent.getLineage();
+            // Lineage: parent lineage + parent ID + ","  (e.g. ",1,5,")
+            String parentLineage = (parent.getLineage() == null || parent.getLineage().isBlank())
+                    ? ","
+                    : parent.getLineage();
             cat.setLineage(parentLineage + parent.getId() + ",");
         } else {
-            cat.setLineage(","); // Root node
+            // Root category
+            cat.setParent(null);
+            cat.setLineage(",");
         }
 
         return categoryRepository.save(cat);
     }
 
-    // =========================================================================
-    // 2. UPDATE
-    // FIX: Missing @CacheEvict — without this, edits to a category name, slug,
-    // or description were invisible to users for up to 24 hours.
-    // =========================================================================
+    /* ───────────────────────────────────────────────────────────
+       UPDATE
+    ─────────────────────────────────────────────────────────── */
 
     @Transactional
     @CacheEvict(value = {"categoryTree", "featuredCategories"}, allEntries = true)
@@ -64,34 +86,52 @@ public class CategoryService {
 
         cat.setName(req.getName());
         cat.setDescription(req.getDescription());
+        cat.setImageUrl(req.getImageUrl());
 
-        // Slug changes are intentionally not supported here — changing a slug
-        // would break all existing product categorySlug references and URLs.
-        // If you need slug changes, add a dedicated migration step.
+        // ── Reparent logic ────────────────────────────────────────
+        // null parentSlug  → leave parent relationship unchanged
+        // ""   parentSlug  → promote to root (remove parent)
+        // "x"  parentSlug  → set parent to category with slug "x"
+        if (req.getParentSlug() != null) {
+            if (req.getParentSlug().isBlank()) {
+                // Explicit empty string → make root
+                cat.setParent(null);
+                cat.setLineage(",");
+            } else {
+                // Prevent circular parenting: new parent must not be a descendant
+                String targetParentSlug = req.getParentSlug().trim();
+                if (targetParentSlug.equals(slug)) {
+                    throw new IllegalArgumentException(
+                            "A category cannot be its own parent.");
+                }
 
-        // Handle parent change — recalculate lineage if parent is being updated
-        if (req.getParentSlug() != null && !req.getParentSlug().isEmpty()) {
-            Category parent = categoryRepository.findBySlug(req.getParentSlug())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Parent category not found: " + req.getParentSlug()));
+                Category parent = categoryRepository.findBySlug(targetParentSlug)
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "Parent category not found: " + targetParentSlug));
 
-            cat.setParent(parent);
-            String parentLineage = parent.getLineage() == null ? "," : parent.getLineage();
-            cat.setLineage(parentLineage + parent.getId() + ",");
-        } else if (req.getParentSlug() != null) {
-            // Explicit empty string means "make this a root category"
-            cat.setParent(null);
-            cat.setLineage(",");
+                // Guard against circular reference via lineage
+                if (parent.getLineage() != null &&
+                        parent.getLineage().contains("," + cat.getId() + ",")) {
+                    throw new IllegalArgumentException(
+                            "Circular category reference detected. '" +
+                                    parent.getName() + "' is a descendant of '" + cat.getName() + "'.");
+                }
+
+                cat.setParent(parent);
+                String parentLineage = (parent.getLineage() == null || parent.getLineage().isBlank())
+                        ? ","
+                        : parent.getLineage();
+                cat.setLineage(parentLineage + parent.getId() + ",");
+            }
         }
+        // if req.getParentSlug() == null → leave parent as-is (no change)
 
         return categoryRepository.save(cat);
     }
 
-    // =========================================================================
-    // 3. DELETE
-    // FIX: Missing @CacheEvict — without this, deleted categories continued
-    // to appear in the navbar for up to 24 hours after deletion.
-    // =========================================================================
+    /* ───────────────────────────────────────────────────────────
+       DELETE
+    ─────────────────────────────────────────────────────────── */
 
     @Transactional
     @CacheEvict(value = {"categoryTree", "featuredCategories"}, allEntries = true)
@@ -100,34 +140,44 @@ public class CategoryService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Category not found: " + slug));
 
-        // Guard: prevent deletion of a category that still has children.
-        // Deleting a parent with active children would orphan them and
-        // corrupt the lineage tree.
         boolean hasChildren = categoryRepository.existsByParentId(cat.getId());
         if (hasChildren) {
             throw new IllegalStateException(
-                    "Cannot delete category '" + slug + "' — it has child categories. " +
+                    "Cannot delete category '" + cat.getName() + "' — it has child categories. " +
                             "Delete or reassign the children first.");
         }
+
+        // Optional: warn if products are still assigned to this category.
+        // Uncomment if you have a product repository check:
+        // boolean hasProducts = productRepository.existsByCategorySlug(slug);
+        // if (hasProducts) throw new IllegalStateException("Category has products attached.");
 
         categoryRepository.delete(cat);
     }
 
-    // =========================================================================
-    // 4. FEATURED CATEGORIES
-    // =========================================================================
+    /* ───────────────────────────────────────────────────────────
+       READ — single category
+    ─────────────────────────────────────────────────────────── */
+
+    public Category getCategory(String slug) {
+        return categoryRepository.findBySlug(slug)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Category not found: " + slug));
+    }
+
+    /* ───────────────────────────────────────────────────────────
+       READ — featured
+    ─────────────────────────────────────────────────────────── */
 
     @Cacheable(value = "featuredCategories")
     public List<Category> getFeaturedCategories() {
         List<Category> allFeatured = categoryRepository.findFeaturedCategoriesCustom();
 
-        // Deterministically-ordered items come first
         List<Category> ordered = allFeatured.stream()
                 .filter(c -> c.getDisplayOrder() != null)
                 .sorted(Comparator.comparingInt(Category::getDisplayOrder))
                 .collect(Collectors.toList());
 
-        // Unordered items are shuffled for variety
         List<Category> randoms = allFeatured.stream()
                 .filter(c -> c.getDisplayOrder() == null)
                 .collect(Collectors.toList());
@@ -137,21 +187,20 @@ public class CategoryService {
         return ordered;
     }
 
-    // =========================================================================
-    // 5. CATEGORY TREE (Cached — the heavy lifting for the navbar mega-menu)
-    // =========================================================================
+    /* ───────────────────────────────────────────────────────────
+       READ — full tree (O(n) in-memory, no N+1 queries)
+    ─────────────────────────────────────────────────────────── */
 
     @Cacheable(value = "categoryTree", key = "'fullTree'")
     public List<CategoryTreeResponse> getCategoryTree() {
-        List<Category> allCategories = categoryRepository.findAll();
+        List<Category> all = categoryRepository.findAll();
 
-        // Build children map in-memory — O(n) instead of N+1 queries
-        Map<String, List<Category>> childrenMap = allCategories.stream()
+        Map<String, List<Category>> childrenMap = all.stream()
                 .filter(c -> c.getParent() != null)
                 .collect(Collectors.groupingBy(c -> c.getParent().getId()));
 
-        return allCategories.stream()
-                .filter(c -> c.getParent() == null) // Root nodes only
+        return all.stream()
+                .filter(c -> c.getParent() == null)
                 .map(root -> buildTreeInMemory(root, childrenMap))
                 .toList();
     }
@@ -165,6 +214,7 @@ public class CategoryService {
         dto.setName(category.getName());
         dto.setSlug(category.getSlug());
         dto.setImageUrl(category.getImageUrl());
+        dto.setDescription(category.getDescription()); // ✅ include description in tree
 
         List<Category> children = childrenMap.getOrDefault(
                 category.getId(), Collections.emptyList());
