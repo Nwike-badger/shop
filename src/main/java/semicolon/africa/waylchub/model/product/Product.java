@@ -29,8 +29,7 @@ import java.util.*;
         // For smart search brand-matching strategy
         @CompoundIndex(name = "brand_active", def = "{'brandName': 1, 'isActive': 1}")
 
-        // ❌ NO TEXT INDEX HERE!
-        // We removed it because MongoIndexConfig.java handles the smart weighted text index now.
+
 })
 public class Product {
 
@@ -49,20 +48,19 @@ public class Product {
     @Indexed
     private String categorySlug;
 
-    // Campaign tracking
+
     @Indexed
     private String activeCampaignId;
 
-    // Safe price backup (SEPARATE from compareAtPrice which is for display)
+
     private BigDecimal originalBasePrice;
 
-    // Tags for flexible targeting
+
     @Indexed
     @Builder.Default
     private Set<String> tags = new HashSet<>();
 
-    @Indexed
-    private String categoryLineage;
+    @Indexed private List<String> categoryLineageIds = new ArrayList<>();
 
     private String categoryName;
     private String brandName;

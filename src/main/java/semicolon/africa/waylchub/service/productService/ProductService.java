@@ -93,11 +93,10 @@ public class ProductService {
             Category category = categoryRepository.findBySlug(filter.getCategorySlug())
                     .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
 
-            // Matches the exact category OR any product whose lineage path includes it
-            query.addCriteria(new Criteria().orOperator(
-                    Criteria.where("category.id").is(category.getId()),
-                    Criteria.where("categoryLineage").regex("," + category.getId() + ",")
-            ));
+            // ✅ Uses multikey index (FAST)
+            query.addCriteria(
+                    Criteria.where("categoryLineageIds").in(category.getId())
+            );
         }
 
         if (filter.getMinPrice() != null)
@@ -183,7 +182,7 @@ public class ProductService {
             product.setCategory(cat);
             product.setCategoryName(cat.getName());
             product.setCategorySlug(cat.getSlug());
-            product.setCategoryLineage(cat.getLineage());
+            product.setCategoryLineageIds(extractLineageIds(cat));
         }
 
         if (request.getBrandSlug() != null) {
@@ -450,5 +449,25 @@ public class ProductService {
                                 "' for option '" + entry.getKey() + "'");
             }
         }
+    }
+
+    private List<String> extractLineageIds(Category cat) {
+        List<String> ids = new ArrayList<>();
+
+        if (cat.getLineage() != null && !cat.getLineage().isBlank()) {
+            String[] parts = cat.getLineage().split(",");
+            for (String part : parts) {
+                if (!part.isBlank()) {
+                    ids.add(part.trim());
+                }
+            }
+        }
+
+        // ✅ MUST include current category
+        if (cat.getId() != null) {
+            ids.add(cat.getId());
+        }
+
+        return ids;
     }
 }
