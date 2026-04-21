@@ -33,14 +33,12 @@ public class CategoryService {
 
     private final CategoryRepository categoryRepository;
 
-    /* ───────────────────────────────────────────────────────────
-       CREATE
-    ─────────────────────────────────────────────────────────── */
+
 
     @Transactional
     @CacheEvict(value = {"categoryTree", "featuredCategories"}, allEntries = true)
     public Category createCategory(CategoryRequest req) {
-        // Prevent duplicate slugs
+
         if (categoryRepository.findBySlug(req.getSlug()).isPresent()) {
             throw new IllegalArgumentException(
                     "A category with slug '" + req.getSlug() + "' already exists.");
@@ -50,7 +48,7 @@ public class CategoryService {
         cat.setName(req.getName());
         cat.setSlug(req.getSlug());
         cat.setDescription(req.getDescription());
-        cat.setImageUrl(req.getImageUrl()); // ✅ FIX: was missing in original
+        cat.setImageUrl(req.getImageUrl());
 
         if (req.getParentSlug() != null && !req.getParentSlug().isBlank()) {
             Category parent = categoryRepository.findBySlug(req.getParentSlug())
@@ -59,7 +57,7 @@ public class CategoryService {
 
             cat.setParent(parent);
 
-            // Lineage: parent lineage + parent ID + ","  (e.g. ",1,5,")
+
             String parentLineage = (parent.getLineage() == null || parent.getLineage().isBlank())
                     ? ","
                     : parent.getLineage();
@@ -73,9 +71,7 @@ public class CategoryService {
         return categoryRepository.save(cat);
     }
 
-    /* ───────────────────────────────────────────────────────────
-       UPDATE
-    ─────────────────────────────────────────────────────────── */
+
 
     @Transactional
     @CacheEvict(value = {"categoryTree", "featuredCategories"}, allEntries = true)
@@ -88,17 +84,14 @@ public class CategoryService {
         cat.setDescription(req.getDescription());
         cat.setImageUrl(req.getImageUrl());
 
-        // ── Reparent logic ────────────────────────────────────────
-        // null parentSlug  → leave parent relationship unchanged
-        // ""   parentSlug  → promote to root (remove parent)
-        // "x"  parentSlug  → set parent to category with slug "x"
+
         if (req.getParentSlug() != null) {
             if (req.getParentSlug().isBlank()) {
-                // Explicit empty string → make root
+
                 cat.setParent(null);
                 cat.setLineage(",");
             } else {
-                // Prevent circular parenting: new parent must not be a descendant
+
                 String targetParentSlug = req.getParentSlug().trim();
                 if (targetParentSlug.equals(slug)) {
                     throw new IllegalArgumentException(
@@ -109,7 +102,7 @@ public class CategoryService {
                         .orElseThrow(() -> new ResourceNotFoundException(
                                 "Parent category not found: " + targetParentSlug));
 
-                // Guard against circular reference via lineage
+
                 if (parent.getLineage() != null &&
                         parent.getLineage().contains("," + cat.getId() + ",")) {
                     throw new IllegalArgumentException(
@@ -124,14 +117,12 @@ public class CategoryService {
                 cat.setLineage(parentLineage + parent.getId() + ",");
             }
         }
-        // if req.getParentSlug() == null → leave parent as-is (no change)
+
 
         return categoryRepository.save(cat);
     }
 
-    /* ───────────────────────────────────────────────────────────
-       DELETE
-    ─────────────────────────────────────────────────────────── */
+
 
     @Transactional
     @CacheEvict(value = {"categoryTree", "featuredCategories"}, allEntries = true)
@@ -155,9 +146,7 @@ public class CategoryService {
         categoryRepository.delete(cat);
     }
 
-    /* ───────────────────────────────────────────────────────────
-       READ — single category
-    ─────────────────────────────────────────────────────────── */
+
 
     public Category getCategory(String slug) {
         return categoryRepository.findBySlug(slug)
@@ -165,9 +154,7 @@ public class CategoryService {
                         "Category not found: " + slug));
     }
 
-    /* ───────────────────────────────────────────────────────────
-       READ — featured
-    ─────────────────────────────────────────────────────────── */
+
 
     @Cacheable(value = "featuredCategories")
     public List<Category> getFeaturedCategories() {
@@ -187,9 +174,7 @@ public class CategoryService {
         return ordered;
     }
 
-    /* ───────────────────────────────────────────────────────────
-       READ — full tree (O(n) in-memory, no N+1 queries)
-    ─────────────────────────────────────────────────────────── */
+
 
     @Cacheable(value = "categoryTree", key = "'fullTree'")
     public List<CategoryTreeResponse> getCategoryTree() {
@@ -214,7 +199,7 @@ public class CategoryService {
         dto.setName(category.getName());
         dto.setSlug(category.getSlug());
         dto.setImageUrl(category.getImageUrl());
-        dto.setDescription(category.getDescription()); // ✅ include description in tree
+        dto.setDescription(category.getDescription()); //
 
         List<Category> children = childrenMap.getOrDefault(
                 category.getId(), Collections.emptyList());
