@@ -40,16 +40,16 @@ public class Product {
     @NotBlank(message = "Slug is required")
     private String slug;
 
-    @Indexed
-    private String name;
+
+    @Indexed private String name;
     private String description;
 
 
-    @Indexed
+
     private String categorySlug;
 
 
-    @Indexed
+
     private String activeCampaignId;
 
 
@@ -60,7 +60,7 @@ public class Product {
     @Builder.Default
     private Set<String> tags = new HashSet<>();
 
-    @Indexed private List<String> categoryLineageIds = new ArrayList<>();
+    private List<String> categoryLineageIds = new ArrayList<>();
 
     private String categoryName;
     private String brandName;

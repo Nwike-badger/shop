@@ -37,14 +37,18 @@ public class CategoryController {
     /**
      * Featured categories — used by storefront home page CategoryBar.
      * GET /api/categories/featured
+     *
+     * Returns List<CategoryTreeResponse> (not List<Category>) — the service
+     * maps to a DTO before caching so Redis never touches a raw entity with
+     * @DBRef proxies or self-referential parent fields.
      */
     @GetMapping("/featured")
-    public ResponseEntity<List<Category>> getFeaturedCategories() {
+    public ResponseEntity<List<CategoryTreeResponse>> getFeaturedCategories() {
         return ResponseEntity.ok(categoryService.getFeaturedCategories());
     }
 
     /**
-     * Single category by slug — used when editing a specific category.
+     * Single category by slug — used by the admin edit form.
      * GET /api/categories/{slug}
      */
     @GetMapping("/{slug}")
@@ -59,8 +63,6 @@ public class CategoryController {
     /**
      * Create a new category (root or child).
      * POST /api/categories
-     *
-     * Body: { name, slug, parentSlug?, description?, imageUrl? }
      */
     @PostMapping
     @PreAuthorize("hasRole('ROLE_ADMIN')")
@@ -72,13 +74,8 @@ public class CategoryController {
     }
 
     /**
-     * Update an existing category — rename, reparent, change image, etc.
+     * Update an existing category.
      * PUT /api/categories/{slug}
-     *
-     * Reparenting rules (parentSlug field):
-     *   null        → leave parent relationship unchanged
-     *   ""          → promote to root (remove parent)
-     *   "some-slug" → nest under that parent
      */
     @PutMapping("/{slug}")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
@@ -92,13 +89,7 @@ public class CategoryController {
     /**
      * Delete a category.
      * DELETE /api/categories/{slug}
-     *
-     * Returns 409 Conflict if the category still has child categories.
-     * The service layer throws IllegalStateException in that case,
-     * which your global exception handler should map to 409.
-     *
-     * If you don't have a global handler yet, the fallback @ExceptionHandler
-     * below catches it locally.
+     * Returns 409 Conflict if the category still has children.
      */
     @DeleteMapping("/{slug}")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
@@ -109,7 +100,7 @@ public class CategoryController {
                 Map.of("message", "Category '" + slug + "' deleted successfully."));
     }
 
-    /* ── Local exception handler (remove if you have a @ControllerAdvice) ── */
+    /* ── Local exception handlers ─────────────────────────── */
 
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<Map<String, String>> handleConflict(IllegalStateException ex) {

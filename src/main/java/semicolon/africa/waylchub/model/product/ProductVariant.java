@@ -64,8 +64,7 @@ public class ProductVariant {
 
     private BigDecimal compareAtPrice;  // display-only: "was ₦X"
 
-    // ── CAMPAIGN FIELDS ───────────────────────────────────────────────────────
-    @Indexed
+
     private String activeCampaignId;    // which campaign owns this variant's price
     private BigDecimal originalPrice;   // safe backup used only by campaign engine
     // ─────────────────────────────────────────────────────────────────────────

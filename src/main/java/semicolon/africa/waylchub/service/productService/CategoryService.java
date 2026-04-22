@@ -14,26 +14,15 @@ import semicolon.africa.waylchub.repository.productRepository.CategoryRepository
 import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * CategoryService — manages the full product category taxonomy.
- *
- * Fixes applied vs original:
- *  1. createCategory now persists imageUrl from the request.
- *  2. updateCategory now persists imageUrl from the request.
- *  3. updateCategory correctly promotes a child to root when
- *     parentSlug is explicitly passed as an empty string.
- *  4. deleteCategory provides a clean, descriptive error so the
- *     frontend can surface exactly why deletion was blocked.
- *
- * Ensure CategoryRequest has: name, slug, parentSlug, description, imageUrl.
- */
 @Service
 @RequiredArgsConstructor
 public class CategoryService {
 
     private final CategoryRepository categoryRepository;
 
-
+    // =========================================================================
+    // WRITES — evict both caches on any structural change
+    // =========================================================================
 
     @Transactional
     @CacheEvict(value = {"categoryTree", "featuredCategories"}, allEntries = true)
@@ -57,21 +46,17 @@ public class CategoryService {
 
             cat.setParent(parent);
 
-
             String parentLineage = (parent.getLineage() == null || parent.getLineage().isBlank())
                     ? ","
                     : parent.getLineage();
             cat.setLineage(parentLineage + parent.getId() + ",");
         } else {
-            // Root category
             cat.setParent(null);
             cat.setLineage(",");
         }
 
         return categoryRepository.save(cat);
     }
-
-
 
     @Transactional
     @CacheEvict(value = {"categoryTree", "featuredCategories"}, allEntries = true)
@@ -84,14 +69,11 @@ public class CategoryService {
         cat.setDescription(req.getDescription());
         cat.setImageUrl(req.getImageUrl());
 
-
         if (req.getParentSlug() != null) {
             if (req.getParentSlug().isBlank()) {
-
                 cat.setParent(null);
                 cat.setLineage(",");
             } else {
-
                 String targetParentSlug = req.getParentSlug().trim();
                 if (targetParentSlug.equals(slug)) {
                     throw new IllegalArgumentException(
@@ -101,7 +83,6 @@ public class CategoryService {
                 Category parent = categoryRepository.findBySlug(targetParentSlug)
                         .orElseThrow(() -> new ResourceNotFoundException(
                                 "Parent category not found: " + targetParentSlug));
-
 
                 if (parent.getLineage() != null &&
                         parent.getLineage().contains("," + cat.getId() + ",")) {
@@ -118,11 +99,8 @@ public class CategoryService {
             }
         }
 
-
         return categoryRepository.save(cat);
     }
-
-
 
     @Transactional
     @CacheEvict(value = {"categoryTree", "featuredCategories"}, allEntries = true)
@@ -138,26 +116,33 @@ public class CategoryService {
                             "Delete or reassign the children first.");
         }
 
-        // Optional: warn if products are still assigned to this category.
-        // Uncomment if you have a product repository check:
-        // boolean hasProducts = productRepository.existsByCategorySlug(slug);
-        // if (hasProducts) throw new IllegalStateException("Category has products attached.");
-
         categoryRepository.delete(cat);
     }
 
+    // =========================================================================
+    // READS
+    // =========================================================================
 
-
+    /**
+     * Single category by slug — returns raw entity (not cached, not serialized to Redis).
+     * Used only by the admin edit form; the heavy public reads use the cached methods below.
+     */
     public Category getCategory(String slug) {
         return categoryRepository.findBySlug(slug)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Category not found: " + slug));
     }
 
-
-
+    /**
+     * Featured categories for the storefront home page.
+     *
+     * Returns List<CategoryTreeResponse> (not List<Category>) so that Redis
+     * serializes a plain DTO with no @DBRef proxies or parent back-references.
+     * Returning raw Category entities caused a 400 because Jackson's NON_FINAL
+     * default typing attempted to traverse parent → parent.parent → …
+     */
     @Cacheable(value = "featuredCategories")
-    public List<Category> getFeaturedCategories() {
+    public List<CategoryTreeResponse> getFeaturedCategories() {
         List<Category> allFeatured = categoryRepository.findFeaturedCategoriesCustom();
 
         List<Category> ordered = allFeatured.stream()
@@ -171,15 +156,22 @@ public class CategoryService {
         Collections.shuffle(randoms);
 
         ordered.addAll(randoms);
-        return ordered;
+
+        // Map to DTO — children left empty (flat list is fine for the CategoryBar)
+        return ordered.stream()
+                .map(this::toCategoryDto)
+                .collect(Collectors.toList());
     }
 
-
-
+    /**
+     * Full category tree for the Navbar and CategoryManager.
+     * Already returns List<CategoryTreeResponse> — no change needed here.
+     */
     @Cacheable(value = "categoryTree", key = "'fullTree'")
     public List<CategoryTreeResponse> getCategoryTree() {
         List<Category> all = categoryRepository.findAll();
 
+        // Group children by parent id
         Map<String, List<Category>> childrenMap = all.stream()
                 .filter(c -> c.getParent() != null)
                 .collect(Collectors.groupingBy(c -> c.getParent().getId()));
@@ -190,16 +182,15 @@ public class CategoryService {
                 .toList();
     }
 
+    // =========================================================================
+    // PRIVATE HELPERS
+    // =========================================================================
+
     private CategoryTreeResponse buildTreeInMemory(
             Category category,
             Map<String, List<Category>> childrenMap) {
 
-        CategoryTreeResponse dto = new CategoryTreeResponse();
-        dto.setId(category.getId());
-        dto.setName(category.getName());
-        dto.setSlug(category.getSlug());
-        dto.setImageUrl(category.getImageUrl());
-        dto.setDescription(category.getDescription()); //
+        CategoryTreeResponse dto = toCategoryDto(category);
 
         List<Category> children = childrenMap.getOrDefault(
                 category.getId(), Collections.emptyList());
@@ -208,6 +199,24 @@ public class CategoryService {
                 .map(child -> buildTreeInMemory(child, childrenMap))
                 .toList());
 
+        return dto;
+    }
+
+    /**
+     * Maps a Category entity to a Redis-safe DTO.
+     * No @DBRef fields, no parent reference, no MongoDB internals.
+     */
+    private CategoryTreeResponse toCategoryDto(Category c) {
+        CategoryTreeResponse dto = new CategoryTreeResponse();
+        dto.setId(c.getId());
+        dto.setName(c.getName());
+        dto.setSlug(c.getSlug());
+        dto.setDescription(c.getDescription());
+        dto.setImageUrl(c.getImageUrl());
+        dto.setFeatured(c.isFeatured());
+        dto.setDisplayOrder(c.getDisplayOrder());
+        dto.setActive(c.isActive());
+        // children defaults to empty list via field initializer — safe for Redis
         return dto;
     }
 }

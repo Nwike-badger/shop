@@ -12,6 +12,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@ToString(exclude = "parent")          // ← replaces @ToString.Exclude on the field
+@EqualsAndHashCode(exclude = "parent") // ← replaces @EqualsAndHashCode.Exclude on the field
 @Document(collection = "categories")
 public class Category {
 
@@ -27,12 +29,18 @@ public class Category {
     private String description;
     private String imageUrl;
 
-
-
+    /**
+     * @JsonIgnore — prevents Jackson from traversing the self-referential
+     * parent link when serializing to Redis.  Without this, Jackson follows
+     * parent → parent.parent → … until it either hits a circular-reference
+     * error or tries to serialize a MongoDB proxy and throws a 400.
+     *
+     * The tree is rebuilt in-memory in CategoryService.getCategoryTree()
+     * using a childrenMap, so this field is only needed during that
+     * in-process traversal — it never needs to be in the Redis JSON.
+     */
     @DBRef
     @JsonIgnore
-    @ToString.Exclude
-    @EqualsAndHashCode.Exclude
     private Category parent;
 
     @Indexed

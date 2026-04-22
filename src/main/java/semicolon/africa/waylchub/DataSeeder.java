@@ -2,6 +2,7 @@ package semicolon.africa.waylchub;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import semicolon.africa.waylchub.dto.productDto.ProductRequest;
 import semicolon.africa.waylchub.dto.productDto.VariantRequest;
@@ -13,6 +14,7 @@ import java.math.BigDecimal;
 import java.util.*;
 
 @Component
+@Profile("!prod")
 @RequiredArgsConstructor
 public class DataSeeder implements CommandLineRunner {
 
