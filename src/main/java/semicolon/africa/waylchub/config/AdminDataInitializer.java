@@ -42,10 +42,10 @@
 //    private final UserRepository userRepository;
 //    private final PasswordEncoder passwordEncoder;
 //
-//    @Value("${app.admin.email:admin@waylchub.com}")
+//    @Value("${app.admin.email}")
 //    private String adminEmail;
 //
-//    @Value("${app.admin.password:ChangeMe123!}")
+//    @Value("${app.admin.password}")
 //    private String adminPassword;
 //
 //    @Bean
