@@ -72,6 +72,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/categories/**",
                                 "/api/products/**",
+                                "/api/v1/config/cat-bar",
                                 "/api/v1/search**",             // Allow Smart Search
                                 "/api/v1/recommendations/**",   // Allow Trending & For You
                                 "/api/v1/track/**"
@@ -108,7 +109,7 @@ public class SecurityConfig {
         configuration.setAllowedMethods(
                 Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         configuration.setAllowedHeaders(
-                Arrays.asList("Authorization", "Content-Type", "X-Guest-ID","ngrok-skip-browser-warning", "X-Session-Id"));
+                Arrays.asList("Authorization", "Content-Type", "X-Guest-ID","X-Session-Id"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 
