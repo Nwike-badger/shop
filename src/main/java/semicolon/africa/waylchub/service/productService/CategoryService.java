@@ -137,9 +137,7 @@ public class CategoryService {
      * Featured categories for the storefront home page.
      *
      * Returns List<CategoryTreeResponse> (not List<Category>) so that Redis
-     * serializes a plain DTO with no @DBRef proxies or parent back-references.
-     * Returning raw Category entities caused a 400 because Jackson's NON_FINAL
-     * default typing attempted to traverse parent → parent.parent → …
+     * serialises a plain DTO with no @DBRef proxies or parent back-references.
      */
     @Cacheable(value = "featuredCategories")
     public List<CategoryTreeResponse> getFeaturedCategories() {
@@ -148,30 +146,38 @@ public class CategoryService {
         List<Category> ordered = allFeatured.stream()
                 .filter(c -> c.getDisplayOrder() != null)
                 .sorted(Comparator.comparingInt(Category::getDisplayOrder))
-                .collect(Collectors.toList());
+                .collect(Collectors.toList());   // mutable ArrayList — Jackson-safe
 
         List<Category> randoms = allFeatured.stream()
                 .filter(c -> c.getDisplayOrder() == null)
-                .collect(Collectors.toList());
+                .collect(Collectors.toList());   // mutable ArrayList — Jackson-safe
         Collections.shuffle(randoms);
 
         ordered.addAll(randoms);
 
-        // Map to DTO — children left empty (flat list is fine for the CategoryBar)
         return ordered.stream()
                 .map(this::toCategoryDto)
-                .collect(Collectors.toList());
+                .collect(Collectors.toList());   // mutable ArrayList — Jackson-safe
     }
 
     /**
      * Full category tree for the Navbar and CategoryManager.
-     * Already returns List<CategoryTreeResponse> — no change needed here.
+     *
+     * <p><b>Why {@code Collectors.toList()} instead of {@code Stream.toList()}</b><br>
+     * {@code Stream.toList()} (Java 16+) returns {@code ImmutableCollections$List12}.
+     * Jackson's {@code WRAPPER_ARRAY} default-typing looks up the runtime class in its
+     * type registry; {@code ImmutableCollections$List12} is not registered, so Jackson
+     * either skips the wrapper or emits a malformed type token.  The stored JSON then
+     * begins with {@code [[type, item1], [type, item2]]} rather than
+     * {@code ["java.util.ArrayList", [...]]} and reading back triggers:<br>
+     * <pre>Unexpected token START_ARRAY, expected VALUE_STRING: need type id</pre>
+     * {@code Collectors.toList()} produces a plain {@code ArrayList}, which IS
+     * registered, so the correct two-element wrapper array is emitted every time.
      */
     @Cacheable(value = "categoryTree", key = "'fullTree'")
     public List<CategoryTreeResponse> getCategoryTree() {
         List<Category> all = categoryRepository.findAll();
 
-        // Group children by parent id
         Map<String, List<Category>> childrenMap = all.stream()
                 .filter(c -> c.getParent() != null)
                 .collect(Collectors.groupingBy(c -> c.getParent().getId()));
@@ -179,7 +185,7 @@ public class CategoryService {
         return all.stream()
                 .filter(c -> c.getParent() == null)
                 .map(root -> buildTreeInMemory(root, childrenMap))
-                .toList();
+                .collect(Collectors.toList());   // ← was .toList() — fixed
     }
 
     // =========================================================================
@@ -197,7 +203,7 @@ public class CategoryService {
 
         dto.setChildren(children.stream()
                 .map(child -> buildTreeInMemory(child, childrenMap))
-                .toList());
+                .collect(Collectors.toList()));  // ← was .toList() — fixed
 
         return dto;
     }
@@ -216,7 +222,7 @@ public class CategoryService {
         dto.setFeatured(c.isFeatured());
         dto.setDisplayOrder(c.getDisplayOrder());
         dto.setActive(c.isActive());
-        // children defaults to empty list via field initializer — safe for Redis
+        // children defaults to empty ArrayList via field initializer — safe for Redis
         return dto;
     }
 }

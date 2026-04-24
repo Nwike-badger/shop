@@ -1,5 +1,6 @@
 package semicolon.africa.waylchub.dto.productDto;
 
+import jakarta.validation.constraints.Min;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -25,6 +26,11 @@ public class ProductResponse {
     private String brandName;
     private int stockQuantity;
     private String categorySlug;
+    private BigDecimal compareAtPrice;
+    @Min(value = 0, message = "Discount cannot be negative")
+    private Integer discount = 0;
+    private Double averageRating = 0.0;
+    private Integer reviewCount = 0;
     private List<ProductImage> images = new ArrayList<>();
 
 

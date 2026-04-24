@@ -91,9 +91,18 @@ public class ProductController {
     }
 
     @GetMapping("/search")
-    public ResponseEntity<List<ProductResponse>> search(@RequestParam String q) {
-        return ResponseEntity.ok(productService.searchProducts(q)
-                .stream().map(this::mapToResponse).collect(Collectors.toList()));
+    public ResponseEntity<Page<ProductResponse>> search(
+            @RequestParam String q,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+
+        Pageable pageable = PageRequest.of(page, size);
+
+        // NOTE: You will need to update productService.searchProducts to accept 'pageable'
+        // and return a Page<Product> instead of a List<Product>.
+        Page<Product> productPage = productService.searchProducts(q, pageable);
+
+        return ResponseEntity.ok(productPage.map(this::mapToResponse));
     }
 
     @GetMapping("/category/{slug}")
@@ -112,7 +121,7 @@ public class ProductController {
     @GetMapping
     public ResponseEntity<Page<ProductResponse>> getAllProducts(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "10") int size) {
         Pageable pageable = PageRequest.of(page, size);
         ProductFilterRequest emptyFilter = new ProductFilterRequest();
         return ResponseEntity.ok(productService.filterProducts(emptyFilter, pageable)
@@ -132,6 +141,10 @@ public class ProductController {
                 .name(p.getName())
                 .slug(p.getSlug())
                 .price(p.getMinPrice() != null ? p.getMinPrice() : p.getBasePrice())
+                .compareAtPrice(p.getCompareAtPrice())   // ← ADD
+                .discount(p.getDiscount())               // ← ADD
+                .averageRating(p.getAverageRating())     // ← ADD
+                .reviewCount(p.getReviewCount())
                 .stockQuantity(p.getTotalStock() != null ? p.getTotalStock() : 0)
                 .categoryName(p.getCategoryName())
                 .categorySlug(p.getCategorySlug())

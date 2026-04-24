@@ -3,6 +3,8 @@ package semicolon.africa.waylchub;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.MongoDBContainer;
@@ -252,9 +254,12 @@ class ProductServiceTest {
         inactiveReq.setIsActive(false);
         productService.createOrUpdateProduct(inactiveReq);
 
-        List<Product> results = productService.searchProducts("Phone");
+        Page<Product> results = productService.searchProducts(
+                "Phone",
+                Pageable.unpaged()
+        );
 
-        assertThat(results).hasSize(1);
-        assertThat(results.get(0).getSlug()).isEqualTo("visible-phone");
+        assertThat(results.getContent()).hasSize(1);
+        assertThat(results.getContent().get(0).getSlug()).isEqualTo("visible-phone");
     }
 }

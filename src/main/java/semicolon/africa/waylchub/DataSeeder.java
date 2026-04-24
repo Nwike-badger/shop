@@ -14,7 +14,6 @@
 //import java.util.*;
 //
 //@Component
-//@Profile("!prod")
 //@RequiredArgsConstructor
 //public class DataSeeder implements CommandLineRunner {
 //
