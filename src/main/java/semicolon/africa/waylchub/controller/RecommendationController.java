@@ -7,6 +7,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import semicolon.africa.waylchub.dto.productDto.ProductFilterRequest;
+import semicolon.africa.waylchub.dto.productDto.ProductResponse;
 import semicolon.africa.waylchub.dto.recommendation.RecommendationResponse;
 import semicolon.africa.waylchub.dto.recommendation.TrackEventRequest;
 import semicolon.africa.waylchub.model.product.Product;
@@ -56,13 +57,13 @@ public class RecommendationController {
     // =========================================================================
 
     @GetMapping("/search")
-    public ResponseEntity<Page<Product>> search(
+    public ResponseEntity<Page<ProductResponse>> search(
             @RequestParam(required = false) String q,
-            @RequestParam(defaultValue = "0")    int page,
-            @RequestParam(defaultValue = "24")   int size,
-            @RequestParam(required = false)      String category,
-            @RequestParam(required = false)      Double minPrice,
-            @RequestParam(required = false)      Double maxPrice,
+            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "24") int size,
+            @RequestParam(required = false)    String category,
+            @RequestParam(required = false)    Double minPrice,
+            @RequestParam(required = false)    Double maxPrice,
             Principal principal,
             @RequestHeader(value = "X-Session-Id", required = false) String sessionId) {
 
@@ -73,13 +74,12 @@ public class RecommendationController {
 
         Page<Product> results = searchService.search(q, filter, PageRequest.of(page, size));
 
-        // Async: track the search event (non-blocking)
         if (q != null && !q.isBlank()) {
             String userId = principal != null ? principal.getName() : null;
             trackingService.trackSearch(userId, sessionId, q, null);
         }
 
-        return ResponseEntity.ok(results);
+        return ResponseEntity.ok(results.map(this::mapToResponse));  // ← was mapToResponse(results)
     }
 
     // =========================================================================
@@ -184,5 +184,24 @@ public class RecommendationController {
         String userId = principal != null ? principal.getName() : null;
         trackingService.trackWishlist(userId, sessionId, req.productId());
         return ResponseEntity.noContent().build();
+    }
+
+
+    private ProductResponse mapToResponse(Product p) {
+        return ProductResponse.builder()
+                .id(p.getId())
+                .name(p.getName())
+                .slug(p.getSlug())
+                .price(p.getMinPrice() != null ? p.getMinPrice() : p.getBasePrice())
+                .compareAtPrice(p.getCompareAtPrice())   // ← ADD
+                .discount(p.getDiscount())               // ← ADD
+                .averageRating(p.getAverageRating())     // ← ADD
+                .reviewCount(p.getReviewCount())
+                .stockQuantity(p.getTotalStock() != null ? p.getTotalStock() : 0)
+                .categoryName(p.getCategoryName())
+                .categorySlug(p.getCategorySlug())
+                .brandName(p.getBrandName())
+                .images(p.getImages() != null ? p.getImages() : List.of())
+                .build();
     }
 }

@@ -2,7 +2,8 @@ package semicolon.africa.waylchub.service.recommendation;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.*;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.*;
 import org.springframework.data.support.PageableExecutionUtils;
@@ -28,27 +29,19 @@ import java.util.stream.Collectors;
  *
  *   Strategy 1: TEXT SEARCH
  *     Standard MongoDB text index search on name, description, brandName, tags.
- *     Fast, handles multi-word queries well.
  *
  *   Strategy 2: CATEGORY EXPANSION
  *     Parse the query for terms that match category names or slugs.
  *     If "jeans" matches a category, include ALL products in that category
- *     (and all sub-categories via the lineage field).
- *     This is how Jumia/Konga handle category-term searches.
+ *     (and all sub-categories via the categoryLineageIds field).
  *
  *   Strategy 3: BRAND MATCHING
  *     Check if any query term matches a brand name.
- *     "levi" → find brand "Levi's" → include all Levi's products.
  *
- * RESULT MERGE:
- *   Products from strategy 1 (exact text match) are ranked highest.
- *   Strategy 2 and 3 results are appended with deduplication.
- *   Final list is re-sorted by popularity score for relevance.
- *
- * PERFORMANCE:
- *   All three queries run against indexed fields (text index, category.id,
- *   brandName). Each query is O(log n) or O(text-score). No table scans.
- *   Expected p99 latency < 50ms for catalogs up to 500k products.
+ * FIELD NOTE:
+ *   Product.categoryLineageIds is a List<String> of ancestor + self category IDs.
+ *   Queries use Criteria.where("categoryLineageIds").in(catId) — NOT a regex on
+ *   a "categoryLineage" string field (which does not exist on the model).
  */
 @Slf4j
 @Service
@@ -60,50 +53,35 @@ public class SmartSearchService {
     private final ProductPopularityRepository popularityRepository;
 
     private static final int MAX_RESULTS_PER_STRATEGY = 100;
-    private static final int DEFAULT_PAGE_SIZE = 24;
 
     // =========================================================================
     // MAIN ENTRY POINT
     // =========================================================================
 
-    /**
-     * Smart search that combines text matching, category expansion, and brand matching.
-     *
-     * @param keyword  Raw user query (e.g., "levi jeans blue")
-     * @param filter   Optional additional filters (price range, category slug, etc.)
-     * @param pageable Pagination
-     * @return Merged, deduplicated, popularity-sorted product page
-     */
     public Page<Product> search(String keyword, ProductFilterRequest filter, Pageable pageable) {
         if (keyword == null || keyword.isBlank()) {
-            // No keyword: fall back to filtered browse
             return browseFiltered(filter, pageable);
         }
 
         String cleanQuery = keyword.trim().toLowerCase();
         List<String> queryTerms = Arrays.asList(cleanQuery.split("\\s+"));
 
-        // ── Run all three strategies ──────────────────────────────────────────
         Set<String> textMatchIds      = runTextSearch(cleanQuery, filter);
         Set<String> categoryExpandIds = runCategoryExpansion(queryTerms, filter);
         Set<String> brandMatchIds     = runBrandMatch(queryTerms, filter);
 
-        // ── Merge with priority ordering ──────────────────────────────────────
-        // Text matches first (most precise), then category/brand expansions
         LinkedHashSet<String> orderedIds = new LinkedHashSet<>();
-        orderedIds.addAll(textMatchIds);      // highest relevance
-        orderedIds.addAll(categoryExpandIds); // category-level relevance
-        orderedIds.addAll(brandMatchIds);     // brand-level relevance
+        orderedIds.addAll(textMatchIds);
+        orderedIds.addAll(categoryExpandIds);
+        orderedIds.addAll(brandMatchIds);
 
         if (orderedIds.isEmpty()) {
-            log.debug("Smart search: zero results for query='{}', trying fuzzy fallback", cleanQuery);
+            log.debug("Smart search: zero results for query='{}', returning empty page", cleanQuery);
             return Page.empty(pageable);
         }
 
-        // ── Re-rank by popularity ─────────────────────────────────────────────
         List<String> rankedIds = reRankByPopularity(new ArrayList<>(orderedIds));
 
-        // ── Paginate the merged result set ────────────────────────────────────
         int totalSize = rankedIds.size();
         int start     = (int) pageable.getOffset();
         int end       = Math.min(start + pageable.getPageSize(), totalSize);
@@ -114,18 +92,16 @@ public class SmartSearchService {
 
         List<String> pageIds = rankedIds.subList(start, end);
 
-        // Fetch full product documents for this page
         Query fetchQuery = new Query(Criteria.where("id").in(pageIds)
                 .and("isActive").is(true));
         List<Product> products = mongoTemplate.find(fetchQuery, Product.class);
 
-        // Preserve the ranked order (MongoDB $in does not guarantee order)
         Map<String, Product> productMap = products.stream()
                 .collect(Collectors.toMap(Product::getId, p -> p));
         List<Product> orderedProducts = pageIds.stream()
                 .map(productMap::get)
                 .filter(Objects::nonNull)
-                .toList();
+                .collect(Collectors.toList());
 
         return PageableExecutionUtils.getPage(orderedProducts, pageable, () -> totalSize);
     }
@@ -139,10 +115,8 @@ public class SmartSearchService {
             Query q = new Query();
             q.addCriteria(TextCriteria.forDefaultLanguage().matchingAny(query));
             q.addCriteria(Criteria.where("isActive").is(true));
-
             applyPriceFilter(q, filter);
-            applyHardCategoryFilter(q, filter); // user explicitly filtered by category
-
+            applyHardCategoryFilter(q, filter);
             q.fields().include("id");
             q.limit(MAX_RESULTS_PER_STRATEGY);
 
@@ -151,16 +125,11 @@ public class SmartSearchService {
                     .collect(Collectors.toCollection(LinkedHashSet::new));
 
         } catch (Exception e) {
-            // Text index might not exist yet — degrade gracefully
             log.warn("Text search failed (index may not exist): {}", e.getMessage());
             return runFallbackNameSearch(query, filter);
         }
     }
 
-    /**
-     * Fallback when text index doesn't exist: regex search on name + brandName.
-     * Slower (no index) but always works.
-     */
     private Set<String> runFallbackNameSearch(String query, ProductFilterRequest filter) {
         try {
             String regex = ".*" + query.replace(" ", ".*") + ".*";
@@ -185,21 +154,22 @@ public class SmartSearchService {
 
     // =========================================================================
     // STRATEGY 2: CATEGORY EXPANSION
-    // "jeans" → find "Jeans" category → include all products in that tree
+    //
+    // FIX: was using Criteria.where("categoryLineage").regex(...)
+    //      which references a field that does not exist on the Product model.
+    //      Product has categoryLineageIds (List<String>) populated by
+    //      ProductService.extractLineageIds() — queried with .in(catId).
     // =========================================================================
 
     private Set<String> runCategoryExpansion(List<String> queryTerms, ProductFilterRequest filter) {
         try {
-            // Search for categories whose name or slug contains any query term
             List<Category> matchingCategories = new ArrayList<>();
 
             for (String term : queryTerms) {
-                if (term.length() < 3) continue; // skip stopwords like "in", "a"
+                if (term.length() < 3) continue;
 
-                // Exact slug match first (most precise)
                 categoryRepository.findBySlug(term).ifPresent(matchingCategories::add);
 
-                // Partial name match (e.g., "jeans" matches "Slim Jeans")
                 Query catQuery = new Query(
                         Criteria.where("name").regex(".*" + term + ".*", "i")
                 );
@@ -208,21 +178,17 @@ public class SmartSearchService {
 
             if (matchingCategories.isEmpty()) return new LinkedHashSet<>();
 
-            // For each matching category, include products from it AND all sub-categories
-            // Sub-categories are found via the lineage field (e.g., ",rootId,parentId,")
+            // Deduplicate matched category IDs
             Set<String> categoryIds = matchingCategories.stream()
                     .map(Category::getId)
+                    .filter(Objects::nonNull)
                     .collect(Collectors.toSet());
 
-            // Build criteria: product's direct categoryId matches OR lineage contains the category
-            List<Criteria> categoryCriteria = new ArrayList<>();
-            for (String catId : categoryIds) {
-                categoryCriteria.add(Criteria.where("category.id").is(catId));
-                categoryCriteria.add(Criteria.where("categoryLineage").regex("," + catId + ","));
-            }
-
+            // categoryLineageIds contains the category itself AND all its ancestors.
+            // Querying .in(catId) finds every product that belongs to this category
+            // or any sub-category — no regex needed.
             Query q = new Query();
-            q.addCriteria(new Criteria().orOperator(categoryCriteria.toArray(new Criteria[0])));
+            q.addCriteria(Criteria.where("categoryLineageIds").in(categoryIds));
             q.addCriteria(Criteria.where("isActive").is(true));
             applyPriceFilter(q, filter);
             q.fields().include("id");
@@ -240,16 +206,14 @@ public class SmartSearchService {
 
     // =========================================================================
     // STRATEGY 3: BRAND MATCHING
-    // "levi" → find brand "Levi's" → include all Levi's products
     // =========================================================================
 
     private Set<String> runBrandMatch(List<String> queryTerms, ProductFilterRequest filter) {
         try {
-            // Build OR criteria for brand name matching any query term
             List<Criteria> brandCriteria = queryTerms.stream()
                     .filter(term -> term.length() >= 2)
                     .map(term -> Criteria.where("brandName").regex(".*" + term + ".*", "i"))
-                    .toList();
+                    .collect(Collectors.toList());
 
             if (brandCriteria.isEmpty()) return new LinkedHashSet<>();
 
@@ -274,25 +238,14 @@ public class SmartSearchService {
     // RE-RANK BY POPULARITY
     // =========================================================================
 
-    /**
-     * Re-orders the merged product ID list by popularity score, preserving
-     * text-match products at the front (first ~20% stay in original order,
-     * rest are popularity-sorted).
-     *
-     * This ensures that a very popular "Levi's 501 Jeans" (category match)
-     * still ranks above an obscure text match.
-     */
     private List<String> reRankByPopularity(List<String> productIds) {
         if (productIds.size() <= 1) return productIds;
 
         try {
-            // Build a score map from popularity documents
             Map<String, Double> scoreMap = new HashMap<>();
             popularityRepository.findAllById(productIds)
                     .forEach(p -> scoreMap.put(p.getProductId(), p.getPopularityScore()));
 
-            // Stable sort: products with higher popularity float up.
-            // Products with no popularity record get score 0 (sink to bottom).
             return productIds.stream()
                     .sorted(Comparator.comparingDouble(
                             (String id) -> scoreMap.getOrDefault(id, 0.0)).reversed())
@@ -336,27 +289,22 @@ public class SmartSearchService {
         if (filter == null || filter.getCategorySlug() == null) return;
 
         categoryRepository.findBySlug(filter.getCategorySlug()).ifPresent(cat -> {
-            q.addCriteria(new Criteria().orOperator(
-                    Criteria.where("category.id").is(cat.getId()),
-                    Criteria.where("categoryLineage").regex("," + cat.getId() + ",")
-            ));
+            // Same fix: use categoryLineageIds not a regex on a non-existent field
+            q.addCriteria(Criteria.where("categoryLineageIds").in(cat.getId()));
         });
     }
 
     /**
-     * Add tags + categoryName to MongoDB text index.
      * Run this ONCE against your MongoDB to enable full smart search.
      *
+     * db.products.dropIndex("$**_text");
      * db.products.createIndex(
      *   { name: "text", description: "text", brandName: "text",
-     *     categoryName: "text", tags: "text" },
+     *     categoryName: "text", "tags": "text" },
      *   { weights: { name: 10, brandName: 8, categoryName: 5,
      *                tags: 4, description: 1 },
      *     name: "products_smart_text_idx" }
-     * )
-     *
-     * Weights ensure product name matches rank above description matches.
-     * Include this command in your DB migration / init script.
+     * );
      */
     public static final String REQUIRED_INDEX_COMMAND = """
         db.products.dropIndex("$**_text");

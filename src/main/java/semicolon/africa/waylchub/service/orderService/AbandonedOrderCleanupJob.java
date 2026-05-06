@@ -3,13 +3,13 @@ package semicolon.africa.waylchub.service.orderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import semicolon.africa.waylchub.event.OrderCancelledEvent;
 import semicolon.africa.waylchub.model.order.Order;
 import semicolon.africa.waylchub.model.order.OrderStatus;
 import semicolon.africa.waylchub.repository.orderRepository.OrderRepository;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -24,7 +24,26 @@ import java.util.List;
  * shows as sold out even though no money changed hands.
  *
  * ShedLock ensures only ONE instance runs this in a multi-pod deployment.
- * Without ShedLock, every pod would cancel the same orders concurrently.
+ *
+ * WHY ROUTE THROUGH OrderService.cancelOrder():
+ *   The original job set orderStatus directly on the entity and saved via the
+ *   repository. This bypassed two important concerns:
+ *
+ *   1. STATE MACHINE — validateStatusTransition() in OrderService ensures
+ *      only valid transitions are allowed. Bypassing it means the cleanup job
+ *      could cancel a SHIPPED or DELIVERED order if the status check window
+ *      raced with an admin update.
+ *
+ *   2. AUDIT HISTORY — addStatusHistory() records every status change with
+ *      a timestamp and reason. Without it, auto-cancelled orders show no
+ *      history entry, making support investigation impossible.
+ *
+ *   Routing through the service gets both for free.
+ *
+ * NOTE ON OrderCancelledEvent:
+ *   OrderService.cancelOrder() already publishes OrderCancelledEvent internally,
+ *   so this job does NOT publish it again — that would trigger a double stock
+ *   restoration for every abandoned order.
  */
 @Slf4j
 @Component
@@ -32,10 +51,8 @@ import java.util.List;
 public class AbandonedOrderCleanupJob {
 
     private final OrderRepository orderRepository;
-    private final ApplicationEventPublisher eventPublisher;
+    private final OrderService orderService;
 
-    // Run every 10 minutes. ShedLock holds a lock for 9 minutes so overlapping
-    // runs are impossible even if a pod hangs.
     @Scheduled(fixedDelayString = "PT10M", initialDelayString = "PT2M")
     @SchedulerLock(name = "abandonedOrderCleanup", lockAtMostFor = "PT9M", lockAtLeastFor = "PT4M")
     public void cancelAbandonedOrders() {
@@ -51,25 +68,38 @@ public class AbandonedOrderCleanupJob {
         log.info("Abandoned order cleanup: found {} stale PENDING_PAYMENT orders older than 30 minutes",
                 abandoned.size());
 
+        int cancelled = 0;
         for (Order order : abandoned) {
             try {
-                order.setOrderStatus(OrderStatus.CANCELLED);
-                orderRepository.save(order);
-
-                // Fire the same event as manual cancellation — restores stock asynchronously
-                eventPublisher.publishEvent(
-                        new OrderCancelledEvent(order.getId(), order.getItems())
+                // Route through OrderService so that:
+                //   - validateStatusTransition() guards against invalid state changes
+                //   - addStatusHistory() records the cancellation with reason + timestamp
+                //   - OrderCancelledEvent is published exactly once (inside cancelOrder)
+                //     which triggers async stock restoration
+                orderService.cancelOrder(
+                        order.getId(),
+                        "Auto-cancelled: payment not received within 30 minutes"
                 );
 
                 log.info("Auto-cancelled abandoned order: {} (created: {})",
                         order.getOrderNumber(), order.getCreatedAt());
+                cancelled++;
+
+            } catch (IllegalStateException e) {
+                // Order was in a state that cannot be cancelled (e.g., just shipped).
+                // This is a legitimate race condition — log and skip, do not retry.
+                log.warn("Skipping auto-cancel for order {} — invalid state transition: {}",
+                        order.getOrderNumber(), e.getMessage());
 
             } catch (Exception e) {
-                // Log and continue — don't let one failure stop the rest from being cleaned up
-                log.error("Failed to auto-cancel order {}: {}", order.getOrderNumber(), e.getMessage());
+                // Unexpected error — log and continue so one failure doesn't
+                // block the rest of the batch from being cleaned up.
+                log.error("Failed to auto-cancel order {}: {}",
+                        order.getOrderNumber(), e.getMessage());
             }
         }
 
-        log.info("Abandoned order cleanup complete: {} orders cancelled", abandoned.size());
+        log.info("Abandoned order cleanup complete: {}/{} orders cancelled",
+                cancelled, abandoned.size());
     }
 }

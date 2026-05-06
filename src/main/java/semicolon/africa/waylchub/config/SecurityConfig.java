@@ -3,6 +3,7 @@ package semicolon.africa.waylchub.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -51,7 +52,6 @@ public class SecurityConfig {
                 .cors(c -> c.configurationSource(corsConfigurationSource))
                 .csrf(AbstractHttpConfigurer::disable)
 
-                // ── Security response headers ──────────────────────────────────────────
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.deny())
                         .httpStrictTransportSecurity(hsts -> hsts
@@ -63,36 +63,45 @@ public class SecurityConfig {
                 )
 
                 .authorizeHttpRequests(auth -> auth
-
-                        // ── Fully public ────────────────────────────────────────────────
+                        // Auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
 
-                        // ── Public browsing ─────────────────────────────────────────────
-                        // Public browsing — no token needed
+                        // Public browsing
                         .requestMatchers(
                                 "/api/categories/**",
                                 "/api/products/**",
                                 "/api/v1/config/cat-bar",
-                                "/api/v1/search**",             // Allow Smart Search
-                                "/api/v1/recommendations/**",   // Allow Trending & For You
+                                "/api/v1/search**",
+                                "/api/v1/recommendations/**",
                                 "/api/v1/track/**"
                         ).permitAll()
 
-                        // ── Cart — guests send X-Guest-ID instead of JWT ────────────────
+                        // Cart / wishlist
                         .requestMatchers(
                                 "/api/v1/cart/**",
                                 "/api/v1/wishlist/**").permitAll()
 
-                        // ── Monnify webhook — no JWT, must be open ──────────────────────
+                        // Monnify webhook
                         .requestMatchers("/api/v1/payments/webhook/**").permitAll()
 
-                        // ── Payment callback polling ────────────────────────────────────
+                        // Payment callback polling
                         .requestMatchers("/api/v1/orders/verify/**").permitAll()
 
-                        // ── Admin routes — JWT + ROLE_ADMIN required ────────────────────
+                        // Custom tailoring catalog (storefront /custom page)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/custom-catalog/**").permitAll()
+
+                        // Custom tailoring orders — guest submit + lookup
+                        .requestMatchers(HttpMethod.POST, "/api/v1/custom-orders").permitAll()
+                        .requestMatchers(HttpMethod.GET,  "/api/v1/custom-orders/me").authenticated()
+                        .requestMatchers(HttpMethod.GET,  "/api/v1/custom-orders/*").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/custom-uploads/**").permitAll()
+                        // GET /api/v1/custom-orders (admin list), POST /quote, POST /status
+                        // are caught by .anyRequest().authenticated() and enforced by @PreAuthorize.
+
+                        // Admin
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
 
-                        // ── Everything else needs a valid JWT ───────────────────────────
+                        // Everything else
                         .anyRequest().authenticated()
                 )
 
@@ -109,7 +118,7 @@ public class SecurityConfig {
         configuration.setAllowedMethods(
                 Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         configuration.setAllowedHeaders(
-                Arrays.asList("Authorization", "Content-Type", "X-Guest-ID","X-Session-Id"));
+                Arrays.asList("Authorization", "Content-Type", "X-Guest-ID", "X-Session-Id"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 
