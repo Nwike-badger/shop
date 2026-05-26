@@ -30,6 +30,11 @@ import java.util.*;
  * {@link CustomCategoryRegistry} for resilience — useful before the seeder
  * has run on a fresh DB.
  *
+ * UPDATED: DetailsSpec now captures the wizard's fabric grade, embroidery,
+ * and lead-time picks so admin can see what the customer paid for. PricingSpec
+ * stores the live estimate band the customer was shown at submit time, so
+ * admin can sanity-check their final quote against what was promised.
+ *
  * State machine, idempotency, deposit math, and image resolution are unchanged.
  */
 @Slf4j
@@ -52,7 +57,7 @@ public class CustomOrderService {
 
     private final CustomOrderRepository repository;
     private final CustomReferenceGenerator referenceGenerator;
-    private final CustomCategoryService categoryService;     // ✨ DB-backed
+    private final CustomCategoryService categoryService;     // DB-backed
     private final CustomCategoryRegistry categoryRegistry;   // fallback only
     private final StorageService storageService;
     private final ApplicationEventPublisher eventPublisher;
@@ -101,8 +106,12 @@ public class CustomOrderService {
                 .profileName(request.getProfileName())
                 .build();
 
+        // UPDATED: now captures fabricGrade, embroidery, leadTime
         DetailsSpec details = DetailsSpec.builder()
                 .fitting(request.getFitting() != null ? request.getFitting() : FittingPreference.REGULAR)
+                .fabricGrade(parseEnum(FabricGrade.class, request.getFabricGrade(), FabricGrade.STANDARD))
+                .embroidery(parseEnum(EmbroideryLevel.class, request.getEmbroidery(), EmbroideryLevel.NONE))
+                .leadTime(parseEnum(LeadTimeOption.class, request.getLeadTime(), LeadTimeOption.STANDARD))
                 .fabric(request.getFabric())
                 .color(request.getColor())
                 .occasion(request.getOccasion())
@@ -113,6 +122,12 @@ public class CustomOrderService {
         DeliverySpec delivery = DeliverySpec.builder()
                 .mode(request.getDeliveryMode())
                 .address(request.getDeliveryAddress())
+                .build();
+
+        // UPDATED: store the price band the customer saw at submit time
+        PricingSpec pricing = PricingSpec.builder()
+                .estimatedPriceLow(request.getEstimatedPriceLow())
+                .estimatedPriceHigh(request.getEstimatedPriceHigh())
                 .build();
 
         CustomOrder order = CustomOrder.builder()
@@ -129,7 +144,7 @@ public class CustomOrderService {
                 .size(size)
                 .details(details)
                 .delivery(delivery)
-                .pricing(PricingSpec.builder().build())
+                .pricing(pricing)
                 .status(CustomOrderStatus.SUBMITTED)
                 .statusHistory(new ArrayList<>())
                 .idempotencyKey(request.getIdempotencyKey())
@@ -284,6 +299,20 @@ public class CustomOrderService {
                     referenceNumber, quoted, category.priceFrom());
         }
 
+        // Extra sanity check: warn if admin quote is far outside the band the customer saw
+        PricingSpec existingPricing = order.getPricing();
+        if (existingPricing != null && existingPricing.getEstimatedPriceHigh() != null) {
+            BigDecimal ceiling = existingPricing.getEstimatedPriceHigh()
+                    .multiply(BigDecimal.valueOf(1.2));  // 20% above the high estimate
+            if (quoted.compareTo(ceiling) > 0) {
+                log.warn("[Quote] Order {} quoted at ₦{} is more than 20% above the estimate band " +
+                                "shown to customer (₦{} – ₦{}). Consider explaining in quoteNotes.",
+                        referenceNumber, quoted,
+                        existingPricing.getEstimatedPriceLow(),
+                        existingPricing.getEstimatedPriceHigh());
+            }
+        }
+
         PricingSpec pricing = order.getPricing() != null ? order.getPricing() : PricingSpec.builder().build();
         pricing.setQuotedAmount(quoted);
         pricing.setQuoteNotes(request.getQuoteNotes());
@@ -342,5 +371,25 @@ public class CustomOrderService {
                 .actor(actor)
                 .timestamp(Instant.now())
                 .build());
+    }
+
+    // =========================================================================
+    //  HELPERS
+    // =========================================================================
+
+    /**
+     * Safe enum parsing — case-insensitive, returns fallback for null/blank/invalid.
+     * Used to map the wizard's String enum values into typed enums when building
+     * the DetailsSpec at submission time.
+     */
+    private <E extends Enum<E>> E parseEnum(Class<E> type, String value, E fallback) {
+        if (value == null || value.isBlank()) return fallback;
+        try {
+            return Enum.valueOf(type, value.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid value '{}' for enum {}, using fallback {}",
+                    value, type.getSimpleName(), fallback);
+            return fallback;
+        }
     }
 }

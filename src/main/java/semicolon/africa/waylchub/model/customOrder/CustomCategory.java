@@ -59,8 +59,22 @@ public class CustomCategory {
      */
     private String genderHint;
 
-    /** Starting price hint shown on the card; admin sends a real quote later. */
+    /**
+     * Starting price hint shown on the card. The mobile wizard treats this as
+     * the lower bound of the live estimate band.
+     */
     private BigDecimal priceFrom;
+
+    /**
+     * Upper end of the realistic price range. Used by the wizard's live
+     * estimate to compute a band shown to the customer. If null, the wizard
+     * derives it as priceFrom * 2.5 — fine for v1, but setting a real value
+     * tightens the band and improves customer trust.
+     *
+     * Suggested values: Agbada 90000, Suit 120000, Shirt 30000, Trouser 28000,
+     * Dress 55000, etc. Admin can tune these via the admin endpoint.
+     */
+    private BigDecimal maxPrice;
 
     /** Free-form text — "5-7 days", "14-21 days". */
     private String leadTime;
@@ -92,7 +106,7 @@ public class CustomCategory {
     /**
      * SVG path for the silhouette icon — kept for backwards compatibility with
      * the existing card design. Will fall back to this if {@code coverImageUrl}
-     * is empty. Eventually phasable out once all categories have real images.
+     * is empty.
      */
     private String silhouettePath;
 

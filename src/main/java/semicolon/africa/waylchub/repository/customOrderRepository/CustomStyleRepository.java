@@ -6,6 +6,7 @@ import semicolon.africa.waylchub.model.customOrder.CustomStyle;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Same safe-derived-query approach as CustomCategoryRepository.
@@ -19,6 +20,7 @@ public interface CustomStyleRepository extends MongoRepository<CustomStyle, Stri
 
     /** Active styles for a category — both field names are keyword-safe. */
     List<CustomStyle> findByCategorySlugAndActiveTrue(String categorySlug);
+    List<CustomStyle> findByCategorySlugInAndActiveTrue(Set<String> categorySlugs);
 
     /** All styles for a category (admin) — categorySlug is keyword-safe. */
     List<CustomStyle> findByCategorySlug(String categorySlug);

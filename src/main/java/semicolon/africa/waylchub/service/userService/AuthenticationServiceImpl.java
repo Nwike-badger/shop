@@ -43,10 +43,15 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     private final PasswordEncoder passwordEncoder;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final EmailService emailService;
-    @Value("${spring.security.oauth2.client.registration.google.client-id:YOUR_GOOGLE_CLIENT_ID}")
-    private String googleClientId;
+    
     @Value("${app.frontend-url:http://localhost:5173}")
     private String frontendUrl;
+    @Value("${app.google.client-id-web}")
+    private String googleWebClientId;
+    @Value("${app.google.client-id-ios:}")
+    private String googleIosClientId;
+    @Value("${app.google.client-id-android:}")
+    private String googleAndroidClientId;
 
     @Override
     @Transactional
@@ -88,9 +93,14 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     @Transactional
     public AuthenticationResponse googleLogin(GoogleLoginRequest request) {
         try {
+            List<String> validAudiences = new ArrayList<>();
+            validAudiences.add(googleWebClientId);
+            if (!googleIosClientId.isBlank()) validAudiences.add(googleIosClientId);
+            if (!googleAndroidClientId.isBlank()) validAudiences.add(googleAndroidClientId);
+
             GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(
                     new NetHttpTransport(), new GsonFactory())
-                    .setAudience(Collections.singletonList(googleClientId))
+                    .setAudience(validAudiences)
                     .build();
 
             GoogleIdToken idToken = verifier.verify(request.getToken());

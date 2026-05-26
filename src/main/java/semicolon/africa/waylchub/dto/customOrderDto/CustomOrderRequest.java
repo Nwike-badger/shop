@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 import semicolon.africa.waylchub.model.customOrder.*;
 import semicolon.africa.waylchub.model.order.Address;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
@@ -33,6 +34,22 @@ public class CustomOrderRequest {
     /** Slug like "agbada". */
     @NotBlank
     private String categoryId;
+    // Add to your existing CustomOrderRequest:
+
+    /** "STANDARD" | "PREMIUM" | "LUXURY" — parsed into FabricGrade enum in service. */
+    private String fabricGrade;
+
+    /** "NONE" | "LIGHT" | "HEAVY" — parsed into EmbroideryLevel enum. */
+    private String embroidery;
+
+    /** "STANDARD" | "RUSH" — parsed into LeadTimeOption enum. */
+    private String leadTime;
+
+    /** Lower bound of the price band the customer saw in the wizard. */
+    private BigDecimal estimatedPriceLow;
+
+    /** Upper bound of the price band the customer saw in the wizard. */
+    private BigDecimal estimatedPriceHigh;
 
     /** MEN or WOMEN — required even for unisex categories (frontend forces a pick). */
     @NotNull

@@ -11,7 +11,10 @@ import java.time.Instant;
 /**
  * Pricing for a custom order.
  *
- * At submit time this is essentially empty. After admin review:
+ * At submit time the estimate fields are populated (the band the customer saw
+ * in the wizard). The quoted fields are empty until admin reviews and quotes.
+ *
+ * After admin review:
  *   - quotedAmount is set
  *   - depositAmount is computed (50% of quote, rounded HALF_UP to 2dp)
  *   - balanceAmount is the rest
@@ -25,6 +28,21 @@ import java.time.Instant;
 @NoArgsConstructor
 @AllArgsConstructor
 public class PricingSpec {
+
+    // ─── New: what the customer saw at submission time ────────────────
+
+    /**
+     * Lower bound of the live estimate the customer saw when submitting.
+     * Both fields together represent the price band shown in the wizard footer.
+     * Critical context for admin when issuing the final quote — if the quote
+     * lands far outside this band you should justify it to the customer.
+     */
+    private BigDecimal estimatedPriceLow;
+
+    /** Upper bound of the live estimate the customer saw. */
+    private BigDecimal estimatedPriceHigh;
+
+    // ─── Existing: admin-set quote ─────────────────────────────────────
 
     /** Total quoted price. Set when admin applies a quote. */
     private BigDecimal quotedAmount;

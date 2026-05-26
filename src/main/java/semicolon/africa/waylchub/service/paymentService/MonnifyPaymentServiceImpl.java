@@ -83,7 +83,14 @@ public class MonnifyPaymentServiceImpl implements PaymentGatewayService {
         payload.put("paymentMethods",     new String[]{"CARD", "ACCOUNT_TRANSFER", "USSD"});
         // ✅ KEY FIX: Tells Monnify where to redirect after payment
         // Without this, Monnify stays on their own page indefinitely after payment
-        payload.put("redirectUrl",        redirectUrl);
+        // Mobile sends its own returnUrl (custom scheme like exploreabamobile://payment-callback).
+// Web omits it and falls back to the configured default.
+        String effectiveRedirectUrl = (request.getReturnUrl() != null && !request.getReturnUrl().isBlank())
+                ? request.getReturnUrl()
+                : redirectUrl;
+        log.info("PAYMENT INIT [1/4] amount={} | email={} | contractCode={} | baseUrl={}",
+                request.getAmount(), request.getCustomerEmail(), contractCode, baseUrl);
+        payload.put("redirectUrl", effectiveRedirectUrl);
 
         log.info("PAYMENT INIT [3/4] Calling Monnify init-transaction endpoint...");
 

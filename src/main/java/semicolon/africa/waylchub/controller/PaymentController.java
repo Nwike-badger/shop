@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import semicolon.africa.waylchub.dto.paymentDto.InitPaymentRequestBody;
 import semicolon.africa.waylchub.dto.paymentDto.MonnifyWebhookPayload;
 import semicolon.africa.waylchub.dto.paymentDto.PaymentInitRequest;
 import semicolon.africa.waylchub.dto.paymentDto.PaymentInitResponse;
@@ -37,17 +38,18 @@ public class PaymentController {
      * Retries payment initialization for an existing PENDING_PAYMENT order.
      *
      * WHY THIS EXISTS:
-     * When a user abandons Monnify and comes back, the frontend currently sends
-     * them through checkout again — creating a DUPLICATE order and holding more stock.
-     * This endpoint lets the frontend re-initialize payment on the EXISTING order
-     * with no new order creation, no new stock reduction.
+     * When a user abandons Monnify and comes back, the frontend would otherwise
+     * create a DUPLICATE order and hold more stock. This endpoint re-initializes
+     * payment on the EXISTING order — no new order creation, no new stock reduction.
      *
-     * Called from PaymentCallback "Try Again" button and the Order Detail page.
+     * Mobile sends { "returnUrl": "exploreabamobile://payment-callback" } in the body
+     * so the in-app browser can close on the deep-link match. Web omits the body.
      */
     @PostMapping("/retry/{orderId}")
     public ResponseEntity<?> retryPayment(
             @AuthenticationPrincipal CustomUserDetails userDetails,
-            @PathVariable String orderId) {
+            @PathVariable String orderId,
+            @RequestBody(required = false) InitPaymentRequestBody body) {
 
         if (userDetails == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -80,6 +82,7 @@ public class PaymentController {
                 .customerEmail(order.getCustomerEmail())
                 .customerName(customerName)
                 .paymentDescription("Payment for Order: " + order.getOrderNumber())
+                .returnUrl(body != null ? body.getReturnUrl() : null)
                 .build();
 
         try {
@@ -96,7 +99,8 @@ public class PaymentController {
     @PostMapping("/init/{orderId}")
     public ResponseEntity<?> initPayment(
             @AuthenticationPrincipal CustomUserDetails userDetails,
-            @PathVariable String orderId) {
+            @PathVariable String orderId,
+            @RequestBody(required = false) InitPaymentRequestBody body) {
 
         if (userDetails == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -126,6 +130,7 @@ public class PaymentController {
                 .customerEmail(order.getCustomerEmail())
                 .customerName(customerName)
                 .paymentDescription("Payment for Order: " + order.getOrderNumber())
+                .returnUrl(body != null ? body.getReturnUrl() : null)
                 .build();
 
         try {
@@ -135,9 +140,6 @@ public class PaymentController {
             return ResponseEntity.ok(response);
 
         } catch (PaymentGatewayException e) {
-            // Catch explicitly — previously fell through to Spring's generic 500 body
-            // { "status": 500, "error": "Internal Server Error" }
-            // which doesn't match the { "error": "..." } shape the frontend reads.
             // 502 Bad Gateway is the correct HTTP status when an upstream service fails.
             log.error("Monnify payment init failed for order {}: {}", orderId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
