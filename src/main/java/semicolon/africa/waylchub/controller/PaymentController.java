@@ -8,10 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import semicolon.africa.waylchub.dto.paymentDto.InitPaymentRequestBody;
-import semicolon.africa.waylchub.dto.paymentDto.MonnifyWebhookPayload;
-import semicolon.africa.waylchub.dto.paymentDto.PaymentInitRequest;
-import semicolon.africa.waylchub.dto.paymentDto.PaymentInitResponse;
+import semicolon.africa.waylchub.dto.paymentDto.*;
 import semicolon.africa.waylchub.dto.userDTO.CustomUserDetails;
 import semicolon.africa.waylchub.dto.userDTO.UserResponse;
 import semicolon.africa.waylchub.exception.PaymentGatewayException;
@@ -188,6 +185,52 @@ public class PaymentController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         } catch (Exception e) {
             log.error("Internal error processing Monnify webhook — Monnify will retry", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+
+    /**
+     * Paystack webhook — must be in Spring Security permitAll() since Paystack sends no JWT.
+     * Paystack sends signature in the "x-paystack-signature" header (HMAC-SHA512 of raw body).
+     */
+    @PostMapping("/webhook/paystack")
+    public ResponseEntity<Void> handlePaystackWebhook(
+            @RequestBody String rawPayload,
+            @RequestHeader(value = "x-paystack-signature", required = false) String signature) {
+
+        log.info("Received Paystack webhook event");
+
+        if (signature == null || !paymentService.verifyWebhookSignature(rawPayload, signature)) {
+            log.warn("Rejected Paystack webhook — invalid or missing signature");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        try {
+            PaystackWebhookPayload payload = objectMapper.readValue(rawPayload, PaystackWebhookPayload.class);
+
+            if ("charge.success".equals(payload.getEvent())) {
+                PaystackWebhookPayload.EventData data = payload.getData();
+                if ("success".equals(data.getStatus())) {
+                    log.info("Paystack: successful payment — orderId={}, channel={}",
+                            data.getReference(), data.getChannel());
+
+                    // data.getReference() is our orderId (we set reference=orderId on init)
+                    orderService.processSuccessfulPayment(
+                            data.getReference(),   // orderId
+                            data.getReference(),   // transactionRef (Paystack reference doubles as this)
+                            data.getChannel()      // "card", "bank", "ussd", etc.
+                    );
+                }
+            }
+
+            return ResponseEntity.ok().build();
+
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse Paystack webhook: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        } catch (Exception e) {
+            log.error("Error processing Paystack webhook", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }

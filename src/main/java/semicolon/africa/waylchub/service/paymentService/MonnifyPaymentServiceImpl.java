@@ -19,7 +19,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Slf4j
-@Service
+@Service("monnify")
 public class MonnifyPaymentServiceImpl implements PaymentGatewayService {
 
     private final WebClient webClient;
