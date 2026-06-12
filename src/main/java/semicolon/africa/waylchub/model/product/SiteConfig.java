@@ -9,5 +9,12 @@ import org.springframework.data.mongodb.core.mapping.Document;
 public class SiteConfig {
     @Id
     private String id = "cat_bar";
-    private String catBarParentSlug; // null = show root categories
+    private String catBarParentSlug;
+    private String catBarMode;          // PARENT | LEAVES | DEPTH
+    private Integer catBarDepth;
+
+    // ── NEW: server-side curation ──
+    private java.util.List<String> catBarOrder;        // ordered slugs (pinned-first)
+    private java.util.List<String> catBarHidden;       // hidden slugs
+    private java.util.Map<String, String> catBarImageOverrides; // slug → image URL
 }

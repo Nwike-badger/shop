@@ -23,10 +23,7 @@ public class SiteConfigController {
 
     @PutMapping("/cat-bar")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
-    public ResponseEntity<SiteConfig> updateCatBarConfig(
-            @RequestBody Map<String, String> body) {
-        return ResponseEntity.ok(
-                siteConfigService.updateCatBarConfig(body.get("catBarParentSlug"))
-        );
+    public ResponseEntity<SiteConfig> updateCatBarConfig(@RequestBody SiteConfig body) {
+        return ResponseEntity.ok(siteConfigService.updateCatBarConfig(body));
     }
 }

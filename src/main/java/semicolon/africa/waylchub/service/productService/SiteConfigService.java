@@ -20,14 +20,19 @@ public class SiteConfigService {
                 .orElseGet(SiteConfig::new);
     }
 
-    @CacheEvict(value = CacheConfig.SITE_CONFIG_CACHE, key = "'cat_bar'")  // ← evict only, no @Cacheable
-    public SiteConfig updateCatBarConfig(String parentSlug) {
-        SiteConfig config = siteConfigRepository.findById("cat_bar")
-                .orElseGet(SiteConfig::new);
+    @CacheEvict(value = CacheConfig.SITE_CONFIG_CACHE, key = "'cat_bar'")
+    public SiteConfig updateCatBarConfig(SiteConfig incoming) {
+        SiteConfig config = siteConfigRepository.findById("cat_bar").orElseGet(SiteConfig::new);
         config.setId("cat_bar");
         config.setCatBarParentSlug(
-                parentSlug == null || parentSlug.isBlank() ? null : parentSlug
-        );
+                incoming.getCatBarParentSlug() == null || incoming.getCatBarParentSlug().isBlank()
+                        ? null : incoming.getCatBarParentSlug());
+        config.setCatBarMode(incoming.getCatBarMode() == null || incoming.getCatBarMode().isBlank()
+                ? "PARENT" : incoming.getCatBarMode());
+        config.setCatBarDepth(incoming.getCatBarDepth());
+        config.setCatBarOrder(incoming.getCatBarOrder());
+        config.setCatBarHidden(incoming.getCatBarHidden());
+        config.setCatBarImageOverrides(incoming.getCatBarImageOverrides());
         return siteConfigRepository.save(config);
     }
 }
