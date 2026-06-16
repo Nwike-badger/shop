@@ -62,4 +62,19 @@ public class ResendEmailServiceImpl implements EmailService {
             log.error("Failed to send password reset email to {}. Error: {}", toEmail, e.getMessage(), e);
         }
     }
+
+    @Override
+    @Async
+    public void sendVerificationEmail(String toEmail, String customerName, String verifyLink) {
+        try {
+            Context context = new Context();
+            context.setVariable("customerName", customerName);
+            context.setVariable("verifyLink", verifyLink);
+
+            String htmlContent = templateEngine.process("emails/email-verification", context);
+            sendHtmlEmail(toEmail, "Verify your email · Explore Aba", htmlContent);
+        } catch (Exception e) {
+            log.error("Failed to send verification email to {}. Error: {}", toEmail, e.getMessage(), e);
+        }
+    }
 }

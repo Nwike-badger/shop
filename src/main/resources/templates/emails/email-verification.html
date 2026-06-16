@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Verify Your Email - Explore Aba</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 0; }
+        .email-container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        .header { background-color: #0f172a; color: #ffffff; text-align: center; padding: 30px 20px; }
+        .header h1 { margin: 0; font-size: 28px; letter-spacing: 1px; color: #10b981; }
+        .content { padding: 40px 30px; color: #333333; line-height: 1.6; }
+        .content h2 { color: #0f172a; font-size: 22px; margin-top: 0; }
+        .info-box { background-color: #f8fafc; border-left: 4px solid #10b981; padding: 15px 20px; margin: 20px 0; border-radius: 4px; }
+        .info-box p { margin: 5px 0; font-size: 14px; color: #475569; }
+        .cta-container { text-align: center; margin: 35px 0; }
+        .cta-button { display: inline-block; background-color: #10b981; color: #ffffff; text-decoration: none; padding: 14px 36px; border-radius: 6px; font-size: 16px; font-weight: 600; letter-spacing: 0.3px; }
+        .fallback-link { margin-top: 20px; font-size: 13px; color: #64748b; word-break: break-all; }
+        .fallback-link a { color: #10b981; text-decoration: none; }
+        .warning-box { background-color: #fff7ed; border-left: 4px solid #f59e0b; padding: 12px 18px; margin: 24px 0; border-radius: 4px; font-size: 13px; color: #92400e; }
+        .footer { background-color: #f1f5f9; color: #64748b; text-align: center; padding: 20px; font-size: 13px; }
+        .footer a { color: #10b981; text-decoration: none; }
+    </style>
+</head>
+<body>
+<div class="email-container">
+    <div class="header"><h1>Explore Aba</h1></div>
+    <div class="content">
+        <h2>Confirm your email</h2>
+        <p>Hi <span th:text="${customerName}">there</span>,</p>
+        <p>Welcome to Explore Aba! Please confirm your email address to activate your account and start shopping.</p>
+        <div class="cta-container">
+            <a th:href="${verifyLink}" class="cta-button">Verify My Email</a>
+        </div>
+        <div class="info-box">
+            <p><strong>This link expires in 24 hours.</strong></p>
+            <p>For security, it can only be used once.</p>
+        </div>
+        <div class="warning-box">
+            If you didn't create an Explore Aba account, you can safely ignore this email.
+        </div>
+        <p class="fallback-link">
+            Button not working? Copy and paste this link into your browser:<br>
+            <a th:href="${verifyLink}" th:text="${verifyLink}">verify link</a>
+        </p>
+    </div>
+    <div class="footer">
+        <p>&copy; <span th:text="${#dates.year(#dates.createNow())}">2026</span> Explore Aba. All rights reserved.</p>
+        <p>Need help? Visit our <a href="#">Help Center</a>.</p>
+    </div>
+</div>
+</body>
+</html>

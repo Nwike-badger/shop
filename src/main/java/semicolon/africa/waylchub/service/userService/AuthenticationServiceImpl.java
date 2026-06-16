@@ -22,6 +22,7 @@ import semicolon.africa.waylchub.repository.userRepository.TokenRepository;
 import semicolon.africa.waylchub.repository.userRepository.UserRepository;
 import semicolon.africa.waylchub.service.emailService.EmailService;
 import semicolon.africa.waylchub.service.productService.CartService;
+import semicolon.africa.waylchub.exception.EmailNotVerifiedException;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -62,6 +63,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
         User user = userRepository.findByUsername(authentication.getName())
                 .orElseThrow(() -> new RuntimeException("User not found"));
+        if (!user.isVerified()) {
+            throw new EmailNotVerifiedException("Please verify your email address before logging in.");
+        }
 
         CustomUserDetails userDetails = UserMapper.toCustomUserDetails(user);
         String accessToken = jwtService.generateAccessToken(userDetails);
@@ -78,6 +82,25 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                 log.error("Failed to merge cart for user {}", user.getId(), e);
             }
         }
+
+        return AuthenticationResponse.builder()
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .tokenType("Bearer")
+                .expiresIn(3600L)
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public AuthenticationResponse issueTokensForVerifiedUser(User user) {
+        CustomUserDetails userDetails = UserMapper.toCustomUserDetails(user);
+        String accessToken = jwtService.generateAccessToken(userDetails);
+        String refreshToken = jwtService.generateRefreshToken(userDetails);
+
+        revokeUserTokens(user, Arrays.asList(TokenType.ACCESS_TOKEN, TokenType.REFRESH_TOKEN));
+        saveToken(user, accessToken, TokenType.ACCESS_TOKEN);
+        saveToken(user, refreshToken, TokenType.REFRESH_TOKEN);
 
         return AuthenticationResponse.builder()
                 .accessToken(accessToken)
