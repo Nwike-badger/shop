@@ -9,6 +9,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.*;
 import semicolon.africa.waylchub.dto.userDTO.*;
 import semicolon.africa.waylchub.exception.EmailNotVerifiedException;
+import semicolon.africa.waylchub.exception.UserAlreadyExistsException;
 import semicolon.africa.waylchub.model.user.User;
 import semicolon.africa.waylchub.service.userService.AuthenticationService;
 import semicolon.africa.waylchub.service.userService.EmailVerificationService;
@@ -26,11 +27,16 @@ public class AuthenticationController {
     private final EmailVerificationService emailVerificationService;
 
     @PostMapping("/register")
-    public ResponseEntity<UserResponse> register(@Valid @RequestBody UserRegistrationRequest request) {
-        UserResponse user = userService.register(request);
-        // Fire the verification email (async). Account stays unverified until confirmed.
-        emailVerificationService.sendVerificationEmail(request.getEmail());
-        return ResponseEntity.ok(user);
+    public ResponseEntity<?> register(@Valid @RequestBody UserRegistrationRequest request) {
+        try {
+            UserResponse user = userService.register(request);
+            // Fire the verification email (async). Account stays unverified until confirmed.
+            emailVerificationService.sendVerificationEmail(request.getEmail());
+            return ResponseEntity.ok(user);
+        } catch (UserAlreadyExistsException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", e.getMessage()));  // "Email already in use"
+        }
     }
 
     @PostMapping("/login")

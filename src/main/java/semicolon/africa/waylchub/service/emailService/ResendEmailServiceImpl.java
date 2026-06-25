@@ -72,7 +72,8 @@ public class ResendEmailServiceImpl implements EmailService {
             context.setVariable("verifyLink", verifyLink);
 
             String htmlContent = templateEngine.process("emails/email-verification", context);
-            sendHtmlEmail(toEmail, "Verify your email · Explore Aba", htmlContent);
+            String subjectSuffix = new java.text.SimpleDateFormat("MMM d, h:mm a").format(new java.util.Date());
+            sendHtmlEmail(toEmail, "Verify your email · Explore Aba" + subjectSuffix, htmlContent);
         } catch (Exception e) {
             log.error("Failed to send verification email to {}. Error: {}", toEmail, e.getMessage(), e);
         }
