@@ -53,6 +53,7 @@ public class Order {
     // Payment Info
     private String paymentMethod;
     private String paymentReference;
+    private String paymentGateway;
 
     // Shipping & Billing
     private Address shippingAddress;

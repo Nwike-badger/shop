@@ -3,47 +3,30 @@ package semicolon.africa.waylchub.service.orderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import semicolon.africa.waylchub.event.OrderCancelledEvent;
+import semicolon.africa.waylchub.dto.paymentDto.PaymentVerificationResult;
 import semicolon.africa.waylchub.model.order.Order;
 import semicolon.africa.waylchub.model.order.OrderStatus;
 import semicolon.africa.waylchub.repository.orderRepository.OrderRepository;
+import semicolon.africa.waylchub.service.paymentService.PaymentGatewayService;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
- * Automatically cancels orders that have been in PENDING_PAYMENT status
- * for more than 30 minutes, and fires OrderCancelledEvent to restore stock.
+ * Auto-cancels PENDING_PAYMENT orders older than 30 minutes
+ * — but only after checking the gateway of record first.
  *
- * WHY THIS MATTERS:
- * When a user starts checkout but abandons payment, the order is created and
- * stock is reduced. Without this job, that stock is locked forever — the product
- * shows as sold out even though no money changed hands.
+ * WHY THE VERIFY STEP:
+ *   Webhooks CAN be dropped. Without asking the gateway first, we would
+ *   cancel orders that the customer actually paid for. Verify before cancel
+ *   closes that hole. See production-incident notes for the full timeline.
  *
- * ShedLock ensures only ONE instance runs this in a multi-pod deployment.
- *
- * WHY ROUTE THROUGH OrderService.cancelOrder():
- *   The original job set orderStatus directly on the entity and saved via the
- *   repository. This bypassed two important concerns:
- *
- *   1. STATE MACHINE — validateStatusTransition() in OrderService ensures
- *      only valid transitions are allowed. Bypassing it means the cleanup job
- *      could cancel a SHIPPED or DELIVERED order if the status check window
- *      raced with an admin update.
- *
- *   2. AUDIT HISTORY — addStatusHistory() records every status change with
- *      a timestamp and reason. Without it, auto-cancelled orders show no
- *      history entry, making support investigation impossible.
- *
- *   Routing through the service gets both for free.
- *
- * NOTE ON OrderCancelledEvent:
- *   OrderService.cancelOrder() already publishes OrderCancelledEvent internally,
- *   so this job does NOT publish it again — that would trigger a double stock
- *   restoration for every abandoned order.
+ * WHY ROUTE THROUGH OrderService:
+ *   State-machine validation + audit history + single OrderCancelledEvent
+ *   publish (which triggers async stock restoration).
  */
 @Slf4j
 @Component
@@ -52,54 +35,79 @@ public class AbandonedOrderCleanupJob {
 
     private final OrderRepository orderRepository;
     private final OrderService orderService;
+    private final Map<String, PaymentGatewayService> gateways;
 
     @Scheduled(fixedDelayString = "PT10M", initialDelayString = "PT2M")
     @SchedulerLock(name = "abandonedOrderCleanup", lockAtMostFor = "PT9M", lockAtLeastFor = "PT4M")
     public void cancelAbandonedOrders() {
         LocalDateTime cutoff = LocalDateTime.now().minusMinutes(30);
-
         List<Order> abandoned = orderRepository
                 .findByOrderStatusAndCreatedAtBefore(OrderStatus.PENDING_PAYMENT, cutoff);
 
-        if (abandoned.isEmpty()) {
-            return;
-        }
+        if (abandoned.isEmpty()) return;
 
-        log.info("Abandoned order cleanup: found {} stale PENDING_PAYMENT orders older than 30 minutes",
+        log.info("Cleanup: found {} stale PENDING_PAYMENT orders older than 30 minutes",
                 abandoned.size());
 
-        int cancelled = 0;
+        int recovered = 0, cancelled = 0, skipped = 0;
+
         for (Order order : abandoned) {
+            String gatewayName = order.getPaymentGateway();
+
+            // ── Step 1: If we know the gateway, verify with them first ────────
+            if (gatewayName != null && !gatewayName.isBlank()) {
+                PaymentGatewayService gw = gateways.get(gatewayName);
+                if (gw != null) {
+                    try {
+                        PaymentVerificationResult r = gw.verifyTransaction(order.getId());
+
+                        if (r.getStatus() == PaymentVerificationResult.Status.SUCCESSFUL) {
+                            // Customer paid, webhook missed — save them
+                            log.warn("Cleanup: RECOVERED missed payment — orderId={} gateway={}",
+                                    order.getId(), gatewayName);
+                            orderService.processSuccessfulPayment(
+                                    order.getId(),
+                                    r.getGatewayReference() != null ? r.getGatewayReference() : order.getId(),
+                                    r.getPaymentMethod() != null ? r.getPaymentMethod() : gatewayName);
+                            recovered++;
+                            continue;   // Do NOT cancel
+                        }
+
+                        if (r.getStatus() == PaymentVerificationResult.Status.PENDING) {
+                            // Customer might still be on the checkout page — leave it alone this round
+                            log.info("Cleanup: order {} still PENDING at gateway — skipping", order.getId());
+                            skipped++;
+                            continue;
+                        }
+                        // FAILED or NOT_FOUND → fall through to cancel
+                    } catch (Exception e) {
+                        // Gateway itself is down. Safer to skip than to cancel a possibly-paid order.
+                        log.warn("Cleanup: verify failed for order {} on {} — skipping this round: {}",
+                                order.getId(), gatewayName, e.getMessage());
+                        skipped++;
+                        continue;
+                    }
+                }
+            }
+
+            // ── Step 2: Cancel and restore stock ──────────────────────────────
             try {
-                // Route through OrderService so that:
-                //   - validateStatusTransition() guards against invalid state changes
-                //   - addStatusHistory() records the cancellation with reason + timestamp
-                //   - OrderCancelledEvent is published exactly once (inside cancelOrder)
-                //     which triggers async stock restoration
                 orderService.cancelOrder(
                         order.getId(),
-                        "Auto-cancelled: payment not received within 30 minutes"
-                );
-
+                        "Auto-cancelled: payment not received within 30 minutes");
+                cancelled++;
                 log.info("Auto-cancelled abandoned order: {} (created: {})",
                         order.getOrderNumber(), order.getCreatedAt());
-                cancelled++;
-
             } catch (IllegalStateException e) {
-                // Order was in a state that cannot be cancelled (e.g., just shipped).
-                // This is a legitimate race condition — log and skip, do not retry.
                 log.warn("Skipping auto-cancel for order {} — invalid state transition: {}",
                         order.getOrderNumber(), e.getMessage());
-
             } catch (Exception e) {
-                // Unexpected error — log and continue so one failure doesn't
-                // block the rest of the batch from being cleaned up.
                 log.error("Failed to auto-cancel order {}: {}",
                         order.getOrderNumber(), e.getMessage());
             }
         }
 
-        log.info("Abandoned order cleanup complete: {}/{} orders cancelled",
-                cancelled, abandoned.size());
+        log.info("Cleanup complete: {} recovered, {} cancelled, {} skipped (out of {})",
+                recovered, cancelled, skipped, abandoned.size());
     }
 }

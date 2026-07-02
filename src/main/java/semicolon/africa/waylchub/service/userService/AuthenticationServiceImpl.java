@@ -276,6 +276,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             String displayName = buildDisplayName(user.getFirstName(), user.getLastName());
             String resetLink = frontendUrl + "/reset-password?token=" + rawToken;
 
+           
+
             // Fire-and-forget — @Async inside ResendEmailServiceImpl
             emailService.sendPasswordResetEmail(email, displayName, resetLink);
         });
@@ -288,6 +290,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     public void resetPassword(ResetPasswordRequest request) {
         // Direct lookup by SHA-256 hash — O(1), no BCrypt scanning
         String tokenHash = sha256(request.getToken());
+
 
         PasswordResetToken resetToken = passwordResetTokenRepository
                 .findByTokenHash(tokenHash)

@@ -84,9 +84,6 @@ public class SecurityConfig {
                         // Monnify webhook
                         .requestMatchers("/api/v1/payments/webhook/**").permitAll()
 
-                        // Payment callback polling
-                        .requestMatchers("/api/v1/orders/verify/**").permitAll()
-
                         // Custom tailoring catalog (storefront /custom page)
                         .requestMatchers(HttpMethod.GET, "/api/v1/custom-catalog/**").permitAll()
 

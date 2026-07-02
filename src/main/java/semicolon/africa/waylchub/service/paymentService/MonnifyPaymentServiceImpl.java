@@ -10,6 +10,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import semicolon.africa.waylchub.dto.paymentDto.MonnifyInitApiResponse;
 import semicolon.africa.waylchub.dto.paymentDto.PaymentInitRequest;
 import semicolon.africa.waylchub.dto.paymentDto.PaymentInitResponse;
+import semicolon.africa.waylchub.dto.paymentDto.PaymentVerificationResult;
 import semicolon.africa.waylchub.exception.PaymentGatewayException;
 
 import javax.crypto.Mac;
@@ -180,5 +181,13 @@ public class MonnifyPaymentServiceImpl implements PaymentGatewayService {
             log.error("WEBHOOK — Error during signature verification", e);
             return false;
         }
+    }
+
+    @Override
+    public PaymentVerificationResult verifyTransaction(String orderId) {
+        return PaymentVerificationResult.builder()
+                .status(PaymentVerificationResult.Status.NOT_FOUND)
+                .orderId(orderId)
+                .build();
     }
 }

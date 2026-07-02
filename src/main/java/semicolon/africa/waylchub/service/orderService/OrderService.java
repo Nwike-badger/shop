@@ -274,6 +274,16 @@ public class OrderService {
     }
 
     @Transactional
+    public void setPaymentGateway(String orderId, String gatewayName) {
+        Order order = getOrderById(orderId);
+        if (gatewayName == null || gatewayName.isBlank()) return;
+        if (gatewayName.equalsIgnoreCase(order.getPaymentGateway())) return;  // no-op
+        order.setPaymentGateway(gatewayName.toLowerCase());
+        orderRepository.save(order);
+        log.info("Order {} — payment gateway set to {}", order.getOrderNumber(), gatewayName);
+    }
+
+    @Transactional
     public void processSuccessfulPayment(String orderId, String transactionReference, String actualPaymentMethod) {
         Order order = getOrderById(orderId);
 
@@ -295,7 +305,7 @@ public class OrderService {
         validateStatusTransition(order.getOrderStatus(), OrderStatus.PROCESSING);
         order.setOrderStatus(OrderStatus.PROCESSING);
         addStatusHistory(order, OrderStatus.PROCESSING,
-                "Payment confirmed via Monnify. Ref: " + transactionReference);
+                "Payment confirmed. Ref: " + transactionReference);
 
         // 4. Save the single instance
         orderRepository.save(order);

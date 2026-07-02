@@ -7,6 +7,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import semicolon.africa.waylchub.dto.paymentDto.PaymentVerificationResult;
 import semicolon.africa.waylchub.dto.paymentDto.PaystackInitApiResponse;
 import semicolon.africa.waylchub.dto.paymentDto.PaymentInitRequest;
 import semicolon.africa.waylchub.dto.paymentDto.PaymentInitResponse;
@@ -22,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 
 @Slf4j
-@Primary                    // ← Spring injects this by default wherever PaymentGatewayService is needed
 @Service("paystack")
 public class PaystackPaymentServiceImpl implements PaymentGatewayService {
 
@@ -132,4 +132,14 @@ public class PaystackPaymentServiceImpl implements PaymentGatewayService {
             return false;
         }
     }
+
+    @Override
+    public PaymentVerificationResult verifyTransaction(String orderId) {
+        return PaymentVerificationResult.builder()
+                .status(PaymentVerificationResult.Status.NOT_FOUND)
+                .orderId(orderId)
+                .build();
+    }
+
+
 }
