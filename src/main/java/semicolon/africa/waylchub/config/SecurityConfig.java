@@ -81,8 +81,11 @@ public class SecurityConfig {
                                 "/api/v1/cart/**",
                                 "/api/v1/wishlist/**").permitAll()
 
-                        // Monnify webhook
+                        // payment gateway webhook
                         .requestMatchers("/api/v1/payments/webhook/**").permitAll()
+
+                        // Payment callback polling
+                        .requestMatchers(HttpMethod.GET, "/api/v1/payments/verify/**").permitAll()
 
                         // Custom tailoring catalog (storefront /custom page)
                         .requestMatchers(HttpMethod.GET, "/api/v1/custom-catalog/**").permitAll()
