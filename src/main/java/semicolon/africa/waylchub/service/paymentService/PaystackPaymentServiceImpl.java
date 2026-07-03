@@ -2,7 +2,9 @@ package semicolon.africa.waylchub.service.paymentService;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Primary;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+import semicolon.africa.waylchub.dto.paymentDto.PaystackVerifyResponse;
+import java.math.RoundingMode;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -16,7 +18,6 @@ import semicolon.africa.waylchub.exception.PaymentGatewayException;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
@@ -35,6 +36,7 @@ public class PaystackPaymentServiceImpl implements PaymentGatewayService {
     private String callbackUrl;
 
     private static final String PAYSTACK_INIT_URL = "https://api.paystack.co/transaction/initialize";
+    private static final String PAYSTACK_VERIFY_URL = "https://api.paystack.co/transaction/verify/";
 
     public PaystackPaymentServiceImpl(WebClient.Builder webClientBuilder) {
         this.webClient = webClientBuilder.build();
@@ -133,12 +135,70 @@ public class PaystackPaymentServiceImpl implements PaymentGatewayService {
         }
     }
 
+    /**
+     * Server-side verification — the fallback when a webhook is late or missed.
+     *
+     * Paystack has TWO status fields:
+     *   response.status      → whether the API CALL worked (boolean)
+     *   response.data.status → the actual TRANSACTION status (string)
+     * We care about data.status. Amount comes back in KOBO, so we /100 for NGN.
+     *
+     * We initialized the transaction with reference = orderId, so we can verify
+     * directly by orderId.
+     */
     @Override
     public PaymentVerificationResult verifyTransaction(String orderId) {
-        return PaymentVerificationResult.builder()
-                .status(PaymentVerificationResult.Status.NOT_FOUND)
-                .orderId(orderId)
-                .build();
+        try {
+            PaystackVerifyResponse response = webClient
+                    .get()
+                    .uri(PAYSTACK_VERIFY_URL + orderId)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + secretKey)
+                    .retrieve()
+                    .onStatus(s -> s.value() == 404,
+                            r -> reactor.core.publisher.Mono.empty())
+                    .bodyToMono(PaystackVerifyResponse.class)
+                    .block();
+
+            // API call failed or transaction not found
+            if (response == null || !response.isStatus() || response.getData() == null) {
+                return PaymentVerificationResult.builder()
+                        .status(PaymentVerificationResult.Status.NOT_FOUND)
+                        .orderId(orderId)
+                        .build();
+            }
+
+            PaystackVerifyResponse.Data d = response.getData();
+            PaymentVerificationResult.Status status =
+                    switch (d.getStatus() == null ? "" : d.getStatus().toLowerCase()) {
+                        case "success"                 -> PaymentVerificationResult.Status.SUCCESSFUL;
+                        case "ongoing", "pending"      -> PaymentVerificationResult.Status.PENDING;
+                        case "failed", "abandoned",
+                                "reversed"                -> PaymentVerificationResult.Status.FAILED;
+                        default                        -> PaymentVerificationResult.Status.FAILED;
+                    };
+
+            // Paystack amount is in kobo → convert to NGN
+            BigDecimal amountNgn = d.getAmount() != null
+                    ? d.getAmount().divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP)
+                    : null;
+
+            return PaymentVerificationResult.builder()
+                    .status(status)
+                    .orderId(orderId)
+                    .gatewayReference(d.getReference())   // Paystack reference == our orderId
+                    .amount(amountNgn)
+                    .currency(d.getCurrency())
+                    .paymentMethod(d.getChannel())
+                    .build();
+
+        } catch (WebClientResponseException e) {
+            log.error("Paystack verify HTTP error for {}: status={} body={}",
+                    orderId, e.getStatusCode(), e.getResponseBodyAsString());
+            throw new PaymentGatewayException("Paystack verify failed", e);
+        } catch (Exception e) {
+            log.error("Paystack verify unexpected error for {}: {}", orderId, e.getMessage());
+            throw new PaymentGatewayException("Paystack verify failed", e);
+        }
     }
 
 

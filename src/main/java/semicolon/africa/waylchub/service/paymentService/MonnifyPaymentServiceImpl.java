@@ -7,10 +7,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
-import semicolon.africa.waylchub.dto.paymentDto.MonnifyInitApiResponse;
-import semicolon.africa.waylchub.dto.paymentDto.PaymentInitRequest;
-import semicolon.africa.waylchub.dto.paymentDto.PaymentInitResponse;
-import semicolon.africa.waylchub.dto.paymentDto.PaymentVerificationResult;
+import semicolon.africa.waylchub.dto.paymentDto.*;
 import semicolon.africa.waylchub.exception.PaymentGatewayException;
 
 import javax.crypto.Mac;
@@ -183,11 +180,79 @@ public class MonnifyPaymentServiceImpl implements PaymentGatewayService {
         }
     }
 
+    /**
+     * Server-side verification — the fallback when a webhook is late or missed.
+     *
+     * Monnify's query endpoint takes our paymentReference (= orderId) and returns
+     * the transaction under responseBody. Uses the same cached auth token as init.
+     * Unlike Paystack, Monnify amounts come back in major units (NGN), not kobo.
+     *
+     * The paymentReference is URL-encoded because order IDs are safe, but Monnify
+     * refs sometimes contain characters that need encoding — defensive.
+     */
     @Override
     public PaymentVerificationResult verifyTransaction(String orderId) {
-        return PaymentVerificationResult.builder()
-                .status(PaymentVerificationResult.Status.NOT_FOUND)
-                .orderId(orderId)
-                .build();
+        String accessToken;
+        try {
+            accessToken = authService.getAccessToken();
+        } catch (PaymentGatewayException e) {
+            log.error("Monnify verify — could not get token for {}: {}", orderId, e.getMessage());
+            throw e;
+        }
+
+        try {
+            MonnifyQueryResponse response = webClient
+                    .get()
+                    .uri(uriBuilder -> uriBuilder
+                            .scheme("https")
+                            .host(baseUrl.replace("https://", "").replace("http://", ""))
+                            .path("/api/v1/merchant/transactions/query")
+                            .queryParam("paymentReference", orderId)
+                            .build())
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                    .retrieve()
+                    .onStatus(status -> status.value() == 401, clientResponse -> {
+                        authService.evictAccessToken();
+                        return clientResponse.bodyToMono(String.class)
+                                .map(body -> new PaymentGatewayException(
+                                        "Monnify verify auth failed (401) — token evicted"));
+                    })
+                    .onStatus(status -> status.value() == 404,
+                            clientResponse -> reactor.core.publisher.Mono.empty())
+                    .bodyToMono(MonnifyQueryResponse.class)
+                    .block();
+
+            if (response == null || !response.isRequestSuccessful() || response.getResponseBody() == null) {
+                return PaymentVerificationResult.builder()
+                        .status(PaymentVerificationResult.Status.NOT_FOUND)
+                        .orderId(orderId)
+                        .build();
+            }
+
+            MonnifyQueryResponse.ResponseBody b = response.getResponseBody();
+            PaymentVerificationResult.Status status =
+                    switch (b.getPaymentStatus() == null ? "" : b.getPaymentStatus().toUpperCase()) {
+                        case "PAID"                      -> PaymentVerificationResult.Status.SUCCESSFUL;
+                        case "PENDING"                   -> PaymentVerificationResult.Status.PENDING;
+                        case "FAILED", "EXPIRED",
+                                "CANCELLED"                 -> PaymentVerificationResult.Status.FAILED;
+                        default                          -> PaymentVerificationResult.Status.FAILED;
+                    };
+
+            return PaymentVerificationResult.builder()
+                    .status(status)
+                    .orderId(orderId)
+                    .gatewayReference(b.getTransactionReference())
+                    .amount(b.getAmountPaid())          // already NGN, no /100
+                    .currency(b.getCurrencyCode())
+                    .paymentMethod(b.getPaymentMethod())
+                    .build();
+
+        } catch (PaymentGatewayException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Monnify verify unexpected error for {}: {}", orderId, e.getMessage());
+            throw new PaymentGatewayException("Monnify verify failed", e);
+        }
     }
 }

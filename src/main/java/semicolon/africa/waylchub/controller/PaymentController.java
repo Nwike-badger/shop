@@ -196,9 +196,9 @@ public class PaymentController {
                     .body(Map.of("error", "Access denied"));
         }
 
-        // Fast path
+        // Fast path — webhook already processed it
         if (order.getOrderStatus() != OrderStatus.PENDING_PAYMENT) {
-            return ResponseEntity.ok(Map.of("status", order.getOrderStatus().name()));
+            return verifyResponse(order.getOrderStatus().name());
         }
 
         // Slow path — ask the gateway
@@ -214,13 +214,13 @@ public class PaymentController {
                         result.getGatewayReference() != null ? result.getGatewayReference() : orderId,
                         notBlank(result.getPaymentMethod()) ? result.getPaymentMethod() : gatewayName);
                 Order refreshed = orderService.getOrderById(orderId);
-                return ResponseEntity.ok(Map.of("status", refreshed.getOrderStatus().name()));
+                return verifyResponse(refreshed.getOrderStatus().name());
             }
             // Still pending or failed at the gateway — frontend will keep polling / show failure
-            return ResponseEntity.ok(Map.of("status", order.getOrderStatus().name()));
+            return verifyResponse(order.getOrderStatus().name());
         } catch (Exception e) {
             log.warn("Verify fallback failed for order {} on {}: {}", orderId, gatewayName, e.getMessage());
-            return ResponseEntity.ok(Map.of("status", order.getOrderStatus().name()));
+            return verifyResponse(order.getOrderStatus().name());
         }
     }
 
@@ -344,6 +344,12 @@ public class PaymentController {
     // ========================================================================
     //  HELPERS
     // ========================================================================
+
+    private ResponseEntity<?> verifyResponse(String status) {
+        return ResponseEntity.ok()
+                .header("Cache-Control", "no-store")
+                .body(Map.of("status", status));
+    }
 
     private PaymentInitRequest buildInitRequest(Order order, InitPaymentRequestBody body) {
         String customerName = resolveCustomerName(order.getCustomerId(), order.getCustomerEmail());
