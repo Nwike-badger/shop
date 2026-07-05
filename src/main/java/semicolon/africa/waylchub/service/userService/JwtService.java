@@ -6,8 +6,6 @@ import semicolon.africa.waylchub.dto.userDTO.CustomUserDetails;
 
 public interface JwtService {
     String generateAccessToken(CustomUserDetails userDetails);
-
-    String generateRefreshToken(CustomUserDetails userDetails);
-
-    Jws<Claims> validateToken(String token);
+    Jws<Claims> parseToken(String token);   // signature + expiry only, no DB
+    long getAccessTokenTtlSeconds();
 }

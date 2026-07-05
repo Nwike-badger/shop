@@ -17,6 +17,7 @@ import semicolon.africa.waylchub.repository.userRepository.UserRepository;
 
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -73,6 +74,9 @@ public class UserServiceImpl implements UserService {
                 .lastName(user.getLastName())
                 .email(user.getEmail())
                 .defaultAddress(user.getAddress())
+                .roles(user.getRoles().stream()
+                        .map(Role::getName)
+                        .collect(Collectors.toSet()))
                 .build();
     }
 

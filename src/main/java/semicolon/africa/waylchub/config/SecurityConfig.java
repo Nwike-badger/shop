@@ -21,7 +21,6 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import semicolon.africa.waylchub.repository.userRepository.UserRepository;
 import semicolon.africa.waylchub.service.userService.CustomUserDetailsService;
 import semicolon.africa.waylchub.service.userService.JwtService;
 
@@ -36,9 +35,10 @@ public class SecurityConfig {
     @Value("${cors.permitted-origins:http://localhost:5173}")
     private String allowedOrigins;
 
+    // Filter no longer needs UserRepository — it rebuilds the principal from the token itself.
     @Bean
-    public JwtAuthenticationFilter jwtAuthFilter(JwtService jwtService, UserRepository userRepository) {
-        return new JwtAuthenticationFilter(jwtService, userRepository);
+    public JwtAuthenticationFilter jwtAuthFilter(JwtService jwtService) {
+        return new JwtAuthenticationFilter(jwtService);
     }
 
     @Bean
@@ -51,7 +51,6 @@ public class SecurityConfig {
         return http
                 .cors(c -> c.configurationSource(corsConfigurationSource))
                 .csrf(AbstractHttpConfigurer::disable)
-
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.deny())
                         .httpStrictTransportSecurity(hsts -> hsts
@@ -61,12 +60,8 @@ public class SecurityConfig {
                         .referrerPolicy(r -> r
                                 .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
                 )
-
                 .authorizeHttpRequests(auth -> auth
-                        // Auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
-
-                        // Public browsing
                         .requestMatchers(
                                 "/api/categories/**",
                                 "/api/products/**",
@@ -75,36 +70,17 @@ public class SecurityConfig {
                                 "/api/v1/recommendations/**",
                                 "/api/v1/track/**"
                         ).permitAll()
-
-                        // Cart / wishlist
-                        .requestMatchers(
-                                "/api/v1/cart/**",
-                                "/api/v1/wishlist/**").permitAll()
-
-                        // payment gateway webhook
+                        .requestMatchers("/api/v1/cart/**", "/api/v1/wishlist/**").permitAll()
                         .requestMatchers("/api/v1/payments/webhook/**").permitAll()
-
-                        // Payment callback polling
                         .requestMatchers(HttpMethod.GET, "/api/v1/payments/verify/**").permitAll()
-
-                        // Custom tailoring catalog (storefront /custom page)
                         .requestMatchers(HttpMethod.GET, "/api/v1/custom-catalog/**").permitAll()
-
-                        // Custom tailoring orders — guest submit + lookup
                         .requestMatchers(HttpMethod.POST, "/api/v1/custom-orders").permitAll()
                         .requestMatchers(HttpMethod.GET,  "/api/v1/custom-orders/me").authenticated()
                         .requestMatchers(HttpMethod.GET,  "/api/v1/custom-orders/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/custom-uploads/**").permitAll()
-                        // GET /api/v1/custom-orders (admin list), POST /quote, POST /status
-                        // are caught by .anyRequest().authenticated() and enforced by @PreAuthorize.
-
-                        // Admin
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
-
-                        // Everything else
                         .anyRequest().authenticated()
                 )
-
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
@@ -115,10 +91,8 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(List.of(allowedOrigins.split(",")));
-        configuration.setAllowedMethods(
-                Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
-        configuration.setAllowedHeaders(
-                Arrays.asList("Authorization", "Content-Type", "X-Guest-ID", "X-Session-Id"));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Guest-ID", "X-Session-Id"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 
@@ -142,6 +116,6 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        return new BCryptPasswordEncoder(12);   // ~250ms; good security/perf balance
     }
 }

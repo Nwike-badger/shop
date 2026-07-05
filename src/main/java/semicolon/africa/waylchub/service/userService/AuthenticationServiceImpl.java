@@ -4,9 +4,10 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
-import org.springframework.beans.factory.annotation.Value;
+import io.jsonwebtoken.ExpiredJwtException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -14,19 +15,19 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import semicolon.africa.waylchub.dto.userDTO.*;
+import semicolon.africa.waylchub.exception.EmailNotVerifiedException;
 import semicolon.africa.waylchub.mapper.UserMapper;
 import semicolon.africa.waylchub.model.user.*;
 import semicolon.africa.waylchub.repository.userRepository.PasswordResetTokenRepository;
-import semicolon.africa.waylchub.repository.userRepository.RoleRepository;
-import semicolon.africa.waylchub.repository.userRepository.TokenRepository;
+import semicolon.africa.waylchub.repository.userRepository.RefreshTokenRepository;
 import semicolon.africa.waylchub.repository.userRepository.UserRepository;
 import semicolon.africa.waylchub.service.emailService.EmailService;
 import semicolon.africa.waylchub.service.productService.CartService;
-import semicolon.africa.waylchub.exception.EmailNotVerifiedException;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -37,14 +38,14 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
-    private final TokenRepository tokenRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
     private final UserRepository userRepository;
     private final CartService cartService;
     private final RoleService roleService;
     private final PasswordEncoder passwordEncoder;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final EmailService emailService;
-    
+
     @Value("${app.frontend-url:http://localhost:5173}")
     private String frontendUrl;
     @Value("${app.google.client-id-web}")
@@ -53,7 +54,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     private String googleIosClientId;
     @Value("${app.google.client-id-android:}")
     private String googleAndroidClientId;
+    @Value("${application.security.jwt.refresh-token-expiration:604800}")
+    private long refreshTokenExpirationInSec;   // default 7 days
 
+    // ── Login ─────────────────────────────────────────────────────────────────
     @Override
     @Transactional
     public AuthenticationResponse login(AuthenticationRequest request) {
@@ -61,57 +65,37 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                 new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
         );
 
-        User user = userRepository.findByUsername(authentication.getName())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-        if (!user.isVerified()) {
+        // authenticate() already loaded the user — reuse the principal, no second DB lookup.
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        if (!userDetails.isVerified()) {
             throw new EmailNotVerifiedException("Please verify your email address before logging in.");
         }
 
-        CustomUserDetails userDetails = UserMapper.toCustomUserDetails(user);
         String accessToken = jwtService.generateAccessToken(userDetails);
-        String refreshToken = jwtService.generateRefreshToken(userDetails);
-
-        revokeUserTokens(user, Arrays.asList(TokenType.ACCESS_TOKEN, TokenType.REFRESH_TOKEN));
-        saveToken(user, accessToken, TokenType.ACCESS_TOKEN);
-        saveToken(user, refreshToken, TokenType.REFRESH_TOKEN);
+        String refreshToken = issueRefreshToken(userDetails.getUserId());
 
         if (request.getGuestId() != null && !request.getGuestId().isEmpty()) {
             try {
-                cartService.mergeCarts(request.getGuestId(), user.getId());
+                cartService.mergeCarts(request.getGuestId(), userDetails.getUserId());
             } catch (Exception e) {
-                log.error("Failed to merge cart for user {}", user.getId(), e);
+                log.error("Failed to merge cart for user {}", userDetails.getUserId(), e);
             }
         }
 
-        return AuthenticationResponse.builder()
-                .accessToken(accessToken)
-                .refreshToken(refreshToken)
-                .tokenType("Bearer")
-                .expiresIn(3600L)
-                .build();
+        return buildAuthResponse(accessToken, refreshToken);
     }
 
+    // ── Post-verification auto-login ──────────────────────────────────────────
     @Override
     @Transactional
     public AuthenticationResponse issueTokensForVerifiedUser(User user) {
         CustomUserDetails userDetails = UserMapper.toCustomUserDetails(user);
         String accessToken = jwtService.generateAccessToken(userDetails);
-        String refreshToken = jwtService.generateRefreshToken(userDetails);
-
-        revokeUserTokens(user, Arrays.asList(TokenType.ACCESS_TOKEN, TokenType.REFRESH_TOKEN));
-        saveToken(user, accessToken, TokenType.ACCESS_TOKEN);
-        saveToken(user, refreshToken, TokenType.REFRESH_TOKEN);
-
-        return AuthenticationResponse.builder()
-                .accessToken(accessToken)
-                .refreshToken(refreshToken)
-                .tokenType("Bearer")
-                .expiresIn(3600L)
-                .build();
+        String refreshToken = issueRefreshToken(user.getId());
+        return buildAuthResponse(accessToken, refreshToken);
     }
 
-    // ── Google login ────────────────────────────────────────────────────────
-
+    // ── Google login ──────────────────────────────────────────────────────────
     @Override
     @Transactional
     public AuthenticationResponse googleLogin(GoogleLoginRequest request) {
@@ -156,11 +140,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
             CustomUserDetails userDetails = UserMapper.toCustomUserDetails(user);
             String accessToken = jwtService.generateAccessToken(userDetails);
-            String refreshToken = jwtService.generateRefreshToken(userDetails);
-
-            revokeUserTokens(user, Arrays.asList(TokenType.ACCESS_TOKEN, TokenType.REFRESH_TOKEN));
-            saveToken(user, accessToken, TokenType.ACCESS_TOKEN);
-            saveToken(user, refreshToken, TokenType.REFRESH_TOKEN);
+            String refreshToken = issueRefreshToken(user.getId());
 
             if (request.getGuestId() != null && !request.getGuestId().isEmpty()) {
                 try {
@@ -170,12 +150,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                 }
             }
 
-            return AuthenticationResponse.builder()
-                    .accessToken(accessToken)
-                    .refreshToken(refreshToken)
-                    .tokenType("Bearer")
-                    .expiresIn(3600L)
-                    .build();
+            return buildAuthResponse(accessToken, refreshToken);
 
         } catch (Exception e) {
             log.error("Google authentication failed", e);
@@ -183,83 +158,70 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         }
     }
 
-    // ── Refresh token ───────────────────────────────────────────────────────
-
+    // ── Refresh (with rotation) ────────────────────────────────────────────────
     @Override
     @Transactional
     public AuthenticationResponse refreshToken(RefreshTokenRequest request) {
-        String refreshToken = request.getRefreshToken();
-        var claimsJws = jwtService.validateToken(refreshToken);
-
-        Token dbToken = tokenRepository.findByTokenAndRevoked(refreshToken, false)
-                .orElseThrow(() -> new RuntimeException("Invalid or revoked token"));
-
-        if (dbToken.getTokenType() != TokenType.REFRESH_TOKEN) {
-            throw new RuntimeException("Invalid token type. Refresh token required.");
+        String presented = request.getRefreshToken();
+        if (presented == null || presented.isBlank()) {
+            throw new RuntimeException("Refresh token is required");
         }
 
-        String username = claimsJws.getBody().get("username", String.class);
-        User user = userRepository.findByUsername(username)
+        String tokenHash = sha256(presented);
+        RefreshToken stored = refreshTokenRepository.findByTokenHash(tokenHash)
+                .orElseThrow(() -> new RuntimeException("Invalid or expired refresh token"));
+
+        if (stored.getExpiresAt().isBefore(Instant.now())) {
+            refreshTokenRepository.delete(stored);
+            throw new RuntimeException("Refresh token has expired. Please log in again.");
+        }
+
+        User user = userRepository.findById(stored.getUserId())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         CustomUserDetails userDetails = UserMapper.toCustomUserDetails(user);
         String newAccessToken = jwtService.generateAccessToken(userDetails);
 
-        revokeUserTokens(user, List.of(TokenType.ACCESS_TOKEN));
-        saveToken(user, newAccessToken, TokenType.ACCESS_TOKEN);
+        // Rotation: kill the presented token, hand back a fresh one.
+        refreshTokenRepository.delete(stored);
+        String newRefreshToken = issueRefreshToken(user.getId());
 
-        return AuthenticationResponse.builder()
-                .accessToken(newAccessToken)
-                .refreshToken(refreshToken)
-                .tokenType("Bearer")
-                .expiresIn(3600L)
-                .build();
+        return buildAuthResponse(newAccessToken, newRefreshToken);
     }
 
-    // ── Logout ──────────────────────────────────────────────────────────────
-
+    // ── Logout (ends all sessions for the user) ─────────────────────────────────
     @Override
     @Transactional
     public void logout(String authHeader) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) return;
 
-        String jwt = authHeader.substring(7);
-        Token storedToken = tokenRepository.findByTokenAndRevoked(jwt, false).orElse(null);
+        String accessToken = authHeader.substring(7);
+        String userId;
+        try {
+            userId = jwtService.parseToken(accessToken).getBody().get("id", String.class);
+        } catch (ExpiredJwtException e) {
+            userId = e.getClaims().get("id", String.class);   // expired but still readable
+        } catch (Exception e) {
+            return;   // malformed/tampered — nothing to revoke
+        }
 
-        if (storedToken != null) {
-            storedToken.setRevoked(true);
-            tokenRepository.save(storedToken);
-            revokeUserTokens(storedToken.getUser(),
-                    Arrays.asList(TokenType.ACCESS_TOKEN, TokenType.REFRESH_TOKEN));
+        if (userId != null) {
+            refreshTokenRepository.deleteAllByUserId(userId);
         }
     }
 
-    // ── Forgot password ─────────────────────────────────────────────────────
-
+    // ── Forgot password ─────────────────────────────────────────────────────────
     @Override
     @Transactional
     public void forgotPassword(ForgotPasswordRequest request) {
         String email = request.getEmail().toLowerCase().trim();
 
-        // ── Security: always return 200 OK regardless of whether the email exists.
-        // Returning a different response for unknown emails leaks user existence
-        // (email enumeration attack).
         userRepository.findByEmail(email).ifPresent(user -> {
-
-            // Invalidate any existing unused tokens for this email before issuing a new one
             passwordResetTokenRepository.findAllByEmailAndUsedFalse(email)
-                    .forEach(t -> {
-                        t.setUsed(true);
-                        passwordResetTokenRepository.save(t);
-                    });
+                    .forEach(t -> { t.setUsed(true); passwordResetTokenRepository.save(t); });
 
-            // 128 bits of entropy — effectively unguessable
             String rawToken = UUID.randomUUID().toString().replace("-", "")
                     + UUID.randomUUID().toString().replace("-", "");
-
-            // SHA-256 hash for storage — unlike BCrypt, this allows fast direct lookup
-            // while still being a one-way function safe against DB dump attacks.
-            // BCrypt is wrong here: it's deliberately slow and we need exact matching.
             String tokenHash = sha256(rawToken);
 
             PasswordResetToken resetToken = PasswordResetToken.builder()
@@ -269,28 +231,19 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                     .expiresAt(LocalDateTime.now().plusMinutes(15))
                     .used(false)
                     .build();
-
             passwordResetTokenRepository.save(resetToken);
 
-            // Resolve a proper display name for the email greeting
             String displayName = buildDisplayName(user.getFirstName(), user.getLastName());
             String resetLink = frontendUrl + "/reset-password?token=" + rawToken;
-
-           
-
-            // Fire-and-forget — @Async inside ResendEmailServiceImpl
             emailService.sendPasswordResetEmail(email, displayName, resetLink);
         });
     }
 
-    // ── Reset password ──────────────────────────────────────────────────────
-
+    // ── Reset password ──────────────────────────────────────────────────────────
     @Override
     @Transactional
     public void resetPassword(ResetPasswordRequest request) {
-        // Direct lookup by SHA-256 hash — O(1), no BCrypt scanning
         String tokenHash = sha256(request.getToken());
-
 
         PasswordResetToken resetToken = passwordResetTokenRepository
                 .findByTokenHash(tokenHash)
@@ -299,7 +252,6 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         if (resetToken.isUsed()) {
             throw new RuntimeException("This reset link has already been used");
         }
-
         if (resetToken.getExpiresAt().isBefore(LocalDateTime.now())) {
             throw new RuntimeException("This reset link has expired. Please request a new one.");
         }
@@ -307,46 +259,41 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         User user = userRepository.findById(resetToken.getUserId())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        // Update password
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
 
-        // Mark token consumed — one-time use enforced
         resetToken.setUsed(true);
         passwordResetTokenRepository.save(resetToken);
 
-        // Kick all active sessions — anyone holding old JWTs can no longer access the account
-        revokeUserTokens(user, Arrays.asList(TokenType.ACCESS_TOKEN, TokenType.REFRESH_TOKEN));
+        // Kick every session — old refresh tokens can no longer be used.
+        refreshTokenRepository.deleteAllByUserId(user.getId());
 
         log.info("Password reset successful for userId={}", user.getId());
     }
 
-    // ── Shared helpers ──────────────────────────────────────────────────────
-
-    private void revokeUserTokens(User user, List<TokenType> tokenTypes) {
-        tokenTypes.forEach(type -> {
-            List<Token> tokens = tokenRepository.findAllByUserIdAndTokenType(user.getId(), type);
-            tokens.forEach(token -> {
-                token.setRevoked(true);
-                tokenRepository.save(token);
-            });
-        });
-    }
-
-    private void saveToken(User user, String jwt, TokenType type) {
-        tokenRepository.save(Token.builder()
-                .token(jwt)
-                .user(user)
-                .tokenType(type)
-                .revoked(false)
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    private String issueRefreshToken(String userId) {
+        String rawToken = UUID.randomUUID().toString().replace("-", "")
+                + UUID.randomUUID().toString().replace("-", "");
+        Instant now = Instant.now();
+        refreshTokenRepository.save(RefreshToken.builder()
+                .tokenHash(sha256(rawToken))
+                .userId(userId)
+                .createdAt(now)
+                .expiresAt(now.plusSeconds(refreshTokenExpirationInSec))
                 .build());
+        return rawToken;   // raw goes to the client; only the hash is stored
     }
 
-    /**
-     * SHA-256 hash of a raw token string, Base64-encoded.
-     * Used for password reset tokens — fast, one-way, safe to store.
-     * BCrypt is deliberately slow (designed for passwords); it is wrong for tokens.
-     */
+    private AuthenticationResponse buildAuthResponse(String accessToken, String refreshToken) {
+        return AuthenticationResponse.builder()
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .tokenType("Bearer")
+                .expiresIn(jwtService.getAccessTokenTtlSeconds())   // no longer a hardcoded lie
+                .build();
+    }
+
     private String sha256(String input) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -365,6 +312,4 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         if (!last.isEmpty()) return last;
         return "Customer";
     }
-
 }
-

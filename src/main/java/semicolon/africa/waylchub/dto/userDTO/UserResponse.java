@@ -5,6 +5,7 @@ import lombok.Data;
 import semicolon.africa.waylchub.model.product.Address;
 import semicolon.africa.waylchub.model.user.RoleName;
 
+import java.util.List;
 import java.util.Set;
 
 @Data
