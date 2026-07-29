@@ -5,6 +5,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -16,6 +17,7 @@ import semicolon.africa.waylchub.service.userService.JwtService;
 
 import java.io.IOException;
 
+@Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
@@ -38,7 +40,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         final String token = authHeader.substring(7);
 
         try {
-            // Stateless: verify signature + expiry, then rebuild the user FROM the token. No DB.
             Claims claims = jwtService.parseToken(token).getBody();
 
             if (SecurityContextHolder.getContext().getAuthentication() == null) {
@@ -51,6 +52,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 SecurityContextHolder.getContext().setAuthentication(authToken);
             }
         } catch (Exception e) {
+            log.debug("JWT auth rejected on {} {}: {}", request.getMethod(), request.getRequestURI(), e.toString());
             SecurityContextHolder.clearContext();   // invalid/expired/tampered → treated as anonymous
         }
 

@@ -3,6 +3,7 @@ package semicolon.africa.waylchub.controller;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -17,6 +18,7 @@ import semicolon.africa.waylchub.service.userService.UserService;
 
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
@@ -30,12 +32,11 @@ public class AuthenticationController {
     public ResponseEntity<?> register(@Valid @RequestBody UserRegistrationRequest request) {
         try {
             UserResponse user = userService.register(request);
-            // Fire the verification email (async). Account stays unverified until confirmed.
             emailVerificationService.sendVerificationEmail(request.getEmail());
             return ResponseEntity.ok(user);
         } catch (UserAlreadyExistsException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(Map.of("error", e.getMessage()));  // "Email already in use"
+                    .body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -58,8 +59,16 @@ public class AuthenticationController {
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<AuthenticationResponse> refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
-        return ResponseEntity.ok(authenticationService.refreshToken(request));
+    public ResponseEntity<?> refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
+        try {
+            return ResponseEntity.ok(authenticationService.refreshToken(request));
+        } catch (RuntimeException e) {
+            log.warn("Refresh token request failed: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
+                    "error", "REFRESH_INVALID",
+                    "message", e.getMessage()
+            ));
+        }
     }
 
     @PostMapping("/logout")
@@ -79,7 +88,6 @@ public class AuthenticationController {
     public ResponseEntity<?> verifyEmail(@Valid @RequestBody VerifyEmailRequest request) {
         try {
             User user = emailVerificationService.verify(request.getToken());
-            // Verification succeeded — hand back a real session so the user lands logged in.
             AuthenticationResponse tokens = authenticationService.issueTokensForVerifiedUser(user);
             return ResponseEntity.ok(tokens);
         } catch (RuntimeException e) {
@@ -91,7 +99,6 @@ public class AuthenticationController {
     @PostMapping("/resend-verification")
     public ResponseEntity<Void> resendVerification(@Valid @RequestBody ResendVerificationRequest request) {
         emailVerificationService.sendVerificationEmail(request.getEmail());
-        // Always 200 — never reveal whether the email exists or is already verified
         return ResponseEntity.ok().build();
     }
 

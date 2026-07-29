@@ -54,8 +54,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     private String googleIosClientId;
     @Value("${app.google.client-id-android:}")
     private String googleAndroidClientId;
-    @Value("${application.security.jwt.refresh-token-expiration:604800}")
-    private long refreshTokenExpirationInSec;   // default 7 days
+    @Value("${application.security.jwt.refresh-token-expiration:2592000}")
+    private long refreshTokenExpirationInSec;   // default 30 days — same for password and Google logins
+    @Value("${application.security.jwt.refresh-reuse-grace-seconds:10}")
+    private long refreshReuseGraceSeconds;
 
     // ── Login ─────────────────────────────────────────────────────────────────
     @Override
@@ -65,7 +67,6 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                 new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
         );
 
-        // authenticate() already loaded the user — reuse the principal, no second DB lookup.
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         if (!userDetails.isVerified()) {
             throw new EmailNotVerifiedException("Please verify your email address before logging in.");
@@ -158,7 +159,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         }
     }
 
-    // ── Refresh (with rotation) ────────────────────────────────────────────────
+    // ── Refresh (with rotation + reuse grace window) ────────────────────────────
     @Override
     @Transactional
     public AuthenticationResponse refreshToken(RefreshTokenRequest request) {
@@ -176,14 +177,33 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             throw new RuntimeException("Refresh token has expired. Please log in again.");
         }
 
+        if (stored.isUsed()) {
+            boolean withinGrace = stored.getUsedAt() != null
+                    && stored.getUsedAt().plusSeconds(refreshReuseGraceSeconds).isAfter(Instant.now());
+
+            if (!withinGrace) {
+                // Presented well after it was rotated — not two requests racing,
+                // a dead token coming back. Kill every session for this user.
+                log.warn("Refresh token reuse detected outside grace window for userId={}", stored.getUserId());
+                refreshTokenRepository.deleteAllByUserId(stored.getUserId());
+                throw new RuntimeException("Refresh token has already been used. Please log in again.");
+            }
+            // Within grace: almost certainly concurrent requests hitting a 401 at
+            // the same moment (very common on a dashboard loading several
+            // protected calls at once). Mint a fresh pair instead of punishing
+            // the user for it. usedAt is intentionally left untouched so this
+            // window can't be renewed by repeated presentation.
+        } else {
+            stored.setUsed(true);
+            stored.setUsedAt(Instant.now());
+            refreshTokenRepository.save(stored);
+        }
+
         User user = userRepository.findById(stored.getUserId())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         CustomUserDetails userDetails = UserMapper.toCustomUserDetails(user);
         String newAccessToken = jwtService.generateAccessToken(userDetails);
-
-        // Rotation: kill the presented token, hand back a fresh one.
-        refreshTokenRepository.delete(stored);
         String newRefreshToken = issueRefreshToken(user.getId());
 
         return buildAuthResponse(newAccessToken, newRefreshToken);
@@ -200,9 +220,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         try {
             userId = jwtService.parseToken(accessToken).getBody().get("id", String.class);
         } catch (ExpiredJwtException e) {
-            userId = e.getClaims().get("id", String.class);   // expired but still readable
+            userId = e.getClaims().get("id", String.class);
         } catch (Exception e) {
-            return;   // malformed/tampered — nothing to revoke
+            return;
         }
 
         if (userId != null) {
@@ -265,7 +285,6 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         resetToken.setUsed(true);
         passwordResetTokenRepository.save(resetToken);
 
-        // Kick every session — old refresh tokens can no longer be used.
         refreshTokenRepository.deleteAllByUserId(user.getId());
 
         log.info("Password reset successful for userId={}", user.getId());
@@ -282,7 +301,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                 .createdAt(now)
                 .expiresAt(now.plusSeconds(refreshTokenExpirationInSec))
                 .build());
-        return rawToken;   // raw goes to the client; only the hash is stored
+        return rawToken;
     }
 
     private AuthenticationResponse buildAuthResponse(String accessToken, String refreshToken) {
@@ -290,7 +309,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
                 .tokenType("Bearer")
-                .expiresIn(jwtService.getAccessTokenTtlSeconds())   // no longer a hardcoded lie
+                .expiresIn(jwtService.getAccessTokenTtlSeconds())
                 .build();
     }
 

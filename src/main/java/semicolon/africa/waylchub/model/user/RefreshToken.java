@@ -23,15 +23,21 @@ public class RefreshToken {
     @Indexed
     private String userId;
 
-    // TTL cleanup: Mongo auto-deletes this document 7 days after createdAt.
-    // Keep "7d" in sync with application.security.jwt.refresh-token-expiration (604800s).
-    // NOTE: expireAfter = "0s" would silently create a broken, non-TTL index — that's why
-    // the lifetime is expressed as a positive duration on the creation timestamp instead.
-    @Indexed(expireAfter = "7d")
+    // TTL cleanup: Mongo auto-deletes this document 30 days after createdAt.
+    // Keep "30d" in sync with application.security.jwt.refresh-token-expiration (2592000s).
+    // Changing this annotation does NOT retroactively update an existing index in
+    // MongoDB — run the collMod command below once after deploying.
+    @Indexed(expireAfter = "30d")
     private Instant createdAt;
 
     // Authoritative expiry for the immediate app-level check in refreshToken().
-    // Mongo's TTL monitor only sweeps ~every 60s, so this ensures an expired-but-not-yet-
-    // deleted token is still rejected on the spot.
     private Instant expiresAt;
+
+    // Reuse detection: rotation marks the token used instead of deleting it
+    // outright, so a near-simultaneous re-presentation (concurrent requests
+    // racing, not theft) can be tolerated for a short grace window instead of
+    // forcing a logout. A token reused outside that window revokes every
+    // session for the user.
+    private boolean used;
+    private Instant usedAt;
 }
