@@ -65,6 +65,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/categories/**",
                                 "/api/products/**",
+                                "/api/brands/**",
                                 "/api/v1/config/cat-bar",
                                 "/api/v1/search**",
                                 "/api/v1/recommendations/**",

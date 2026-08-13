@@ -48,6 +48,8 @@ public class Product {
 
     private String categorySlug;
 
+    private String brandSlug;
+
 
 
     private String activeCampaignId;

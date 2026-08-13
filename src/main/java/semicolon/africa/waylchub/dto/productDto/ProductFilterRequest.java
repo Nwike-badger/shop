@@ -10,6 +10,8 @@ public class ProductFilterRequest {
 
     private String categorySlug;
 
+    private String brandSlug;
+
     // Dynamic attributes: Color=Black, Power=3000W
     private Map<String, String> attributes;
 

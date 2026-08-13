@@ -113,6 +113,14 @@ public class ProductController {
                 .map(this::mapToResponse));
     }
 
+    @GetMapping("/brand/{slug}")
+    public ResponseEntity<Page<ProductResponse>> getByBrand(
+            @PathVariable String slug,
+            Pageable pageable) {
+        return ResponseEntity.ok(productService.getProductsByBrandSlug(slug, pageable)
+                .map(this::mapToResponse));
+    }
+
     /**
      * ✅ FIX: Added pagination — the original returned ALL products from MongoDB
      * into memory in one query. With thousands of products this will OOM or time out.

@@ -2,10 +2,12 @@ package semicolon.africa.waylchub.service.productService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.*;
 import org.springframework.data.mongodb.core.*;
 import org.springframework.data.mongodb.core.query.*;
@@ -40,6 +42,14 @@ public class ProductService {
     private final CampaignService campaignService;
     private final ApplicationEventPublisher eventPublisher;
     private final org.springframework.cache.CacheManager cacheManager;
+    // Self-reference through the Spring proxy. Calls made from WITHIN this class
+    // to @Cacheable/@CacheEvict methods on this same class bypass the proxy and
+    // silently skip the annotation — this field routes those calls back through
+    // it. @Lazy is required: without it, Spring can't construct this bean while
+    // also injecting it into itself (circular creation error at startup).
+    @Lazy
+    @Autowired
+    private ProductService self;
 
     // =========================================================================
     // READS
@@ -64,15 +74,19 @@ public class ProductService {
     public Page<Product> getProductsByCategorySlug(String slug, Pageable pageable) {
         ProductFilterRequest filter = new ProductFilterRequest();
         filter.setCategorySlug(slug);
-        return filterProducts(filter, pageable);
+        return self.filterProducts(filter, pageable);
+    }
+
+    public Page<Product> getProductsByBrandSlug(String slug, Pageable pageable) {
+        ProductFilterRequest filter = new ProductFilterRequest();
+        filter.setBrandSlug(slug);
+        return self.filterProducts(filter, pageable);
     }
 
     public Page<Product> searchProducts(String keyword, Pageable pageable) {
         ProductFilterRequest filter = new ProductFilterRequest();
         filter.setKeyword(keyword);
-
-        // Pass the pageable parameter directly and return the Page<Product>
-        return filterProducts(filter, pageable);
+        return self.filterProducts(filter, pageable);
     }
 
     @Cacheable(
@@ -81,6 +95,7 @@ public class ProductService {
             unless    = "#result.content.size() == 0",
             key       = "(#filter.keyword       ?: '') + '_'"
                     + "+ (#filter.categorySlug  ?: '') + '_'"
+                    + "+ (#filter.brandSlug   ?: '') + '_'"
                     + "+ (#filter.minPrice      ?: '') + '_'"
                     + "+ (#filter.maxPrice      ?: '') + '_'"
                     + "+ #pageable.pageNumber   + '_'"
@@ -98,6 +113,10 @@ public class ProductService {
             Category category = categoryRepository.findBySlug(filter.getCategorySlug())
                     .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
             query.addCriteria(Criteria.where("categoryLineageIds").in(category.getId()));
+        }
+
+        if (filter.getBrandSlug() != null) {
+            query.addCriteria(Criteria.where("brandSlug").is(filter.getBrandSlug()));
         }
 
         if (filter.getMinPrice() != null)
@@ -202,6 +221,7 @@ public class ProductService {
                     .orElseThrow(() -> new ResourceNotFoundException("Brand not found"));
             product.setBrand(brand);
             product.setBrandName(brand.getName());
+            product.setBrandSlug(brand.getSlug());
         }
 
         if (request.getVariantOptions() != null && !request.getVariantOptions().isEmpty()) {
