@@ -44,6 +44,15 @@ public class CloudinaryStorageService implements StorageService {
     }
 
     @Override
+    public UploadResult uploadLocalFile(java.nio.file.Path file, String folder, String publicId) {
+        if (file == null || !java.nio.file.Files.isRegularFile(file)) {
+            throw new IllegalArgumentException("Not a file: " + file);
+        }
+        // Fixed publicId + overwrite=true -> re-running replaces, never duplicates
+        return uploadInternal(file.toFile(), folder, publicId, true);
+    }
+
+    @Override
     public UploadResult uploadFile(MultipartFile file, String folder) {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("File is empty");
@@ -78,15 +87,17 @@ public class CloudinaryStorageService implements StorageService {
     // ─── Helpers ────────────────────────────────────────────────────────
 
     private UploadResult uploadInternal(Object source, String folder) {
+        return uploadInternal(source, folder, "eab_" + UUID.randomUUID().toString().substring(0, 12), false);
+    }
+
+    private UploadResult uploadInternal(Object source, String folder, String publicId, boolean overwrite) {
         try {
-            String publicId = "eab_" + UUID.randomUUID().toString().substring(0, 12);
             @SuppressWarnings("unchecked")
             Map<String, Object> result = cloudinary.uploader().upload(source, ObjectUtils.asMap(
                     "folder", folder,
                     "public_id", publicId,
                     "resource_type", "image",
-                    "overwrite", false,
-                    // Auto-format and auto-quality cut bandwidth dramatically
+                    "overwrite", overwrite,
                     "fetch_format", "auto",
                     "quality", "auto"
             ));

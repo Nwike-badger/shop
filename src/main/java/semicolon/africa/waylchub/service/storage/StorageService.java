@@ -38,6 +38,8 @@ public interface StorageService {
      */
     UploadResult uploadFile(MultipartFile file, String folder);
 
+    UploadResult uploadLocalFile(java.nio.file.Path file, String folder, String publicId);
+
     /**
      * Delete an uploaded asset by its provider-specific public id.
      * No-op for the inline provider.
