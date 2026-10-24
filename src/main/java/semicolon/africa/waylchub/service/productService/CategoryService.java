@@ -3,25 +3,34 @@ package semicolon.africa.waylchub.service.productService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import semicolon.africa.waylchub.dto.productDto.CategoryRequest;
 import semicolon.africa.waylchub.dto.productDto.CategoryTreeResponse;
 import semicolon.africa.waylchub.exception.ResourceNotFoundException;
 import semicolon.africa.waylchub.model.product.Category;
+import semicolon.africa.waylchub.model.product.Product;
 import semicolon.africa.waylchub.repository.productRepository.CategoryRepository;
 
 import java.util.*;
 import java.util.stream.Collectors;
+
+import static semicolon.africa.waylchub.config.CacheConfig.PRODUCTS_LIST_CACHE;
+import static semicolon.africa.waylchub.config.CacheConfig.PRODUCT_DETAIL_CACHE;
 
 @Service
 @RequiredArgsConstructor
 public class CategoryService {
 
     private final CategoryRepository categoryRepository;
+    private final MongoTemplate mongoTemplate;
 
     // =========================================================================
-    // WRITES — evict both caches on any structural change
+    // WRITES — evict caches on any structural change
     // =========================================================================
 
     @Transactional
@@ -58,8 +67,18 @@ public class CategoryService {
         return categoryRepository.save(cat);
     }
 
+    /**
+     * Updates a category. Renaming or moving it also updates:
+     *   - every product in it (categoryName + categoryLineageIds), so the products
+     *     keep showing on the right parent pages
+     *   - every child category's lineage, recursively
+     * Product caches are cleared too, because product cards carry the category name.
+     *
+     * parentSlug: null = leave the parent alone, "" = make top-level, slug = move under it.
+     */
     @Transactional
-    @CacheEvict(value = {"categoryTree", "featuredCategories"}, allEntries = true)
+    @CacheEvict(value = {"categoryTree", "featuredCategories", PRODUCTS_LIST_CACHE, PRODUCT_DETAIL_CACHE},
+            allEntries = true)
     public Category updateCategory(String slug, CategoryRequest req) {
         Category cat = categoryRepository.findBySlug(slug)
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -99,9 +118,15 @@ public class CategoryService {
             }
         }
 
-        return categoryRepository.save(cat);
+        Category saved = categoryRepository.save(cat);
+        propagate(saved, 0);
+        return saved;
     }
 
+    /**
+     * Deletes a category. Refused if it still has child categories or products,
+     * so nothing is ever left orphaned.
+     */
     @Transactional
     @CacheEvict(value = {"categoryTree", "featuredCategories"}, allEntries = true)
     public void deleteCategory(String slug) {
@@ -114,6 +139,15 @@ public class CategoryService {
             throw new IllegalStateException(
                     "Cannot delete category '" + cat.getName() + "' — it has child categories. " +
                             "Delete or reassign the children first.");
+        }
+
+        long productCount = mongoTemplate.count(
+                new Query(Criteria.where("categorySlug").is(slug)), Product.class);
+        if (productCount > 0) {
+            throw new IllegalStateException(
+                    "Cannot delete category '" + cat.getName() + "' — it still has " + productCount +
+                            " product" + (productCount > 1 ? "s" : "") +
+                            ". Move them to another category first.");
         }
 
         categoryRepository.delete(cat);
@@ -163,16 +197,9 @@ public class CategoryService {
     /**
      * Full category tree for the Navbar and CategoryManager.
      *
-     * <p><b>Why {@code Collectors.toList()} instead of {@code Stream.toList()}</b><br>
-     * {@code Stream.toList()} (Java 16+) returns {@code ImmutableCollections$List12}.
-     * Jackson's {@code WRAPPER_ARRAY} default-typing looks up the runtime class in its
-     * type registry; {@code ImmutableCollections$List12} is not registered, so Jackson
-     * either skips the wrapper or emits a malformed type token.  The stored JSON then
-     * begins with {@code [[type, item1], [type, item2]]} rather than
-     * {@code ["java.util.ArrayList", [...]]} and reading back triggers:<br>
-     * <pre>Unexpected token START_ARRAY, expected VALUE_STRING: need type id</pre>
-     * {@code Collectors.toList()} produces a plain {@code ArrayList}, which IS
-     * registered, so the correct two-element wrapper array is emitted every time.
+     * Uses Collectors.toList() (plain ArrayList) instead of Stream.toList()
+     * (ImmutableCollections$List12), because Jackson's WRAPPER_ARRAY default typing
+     * in Redis can't round-trip the immutable list class.
      */
     @Cacheable(value = "categoryTree", key = "'fullTree'")
     public List<CategoryTreeResponse> getCategoryTree() {
@@ -185,12 +212,44 @@ public class CategoryService {
         return all.stream()
                 .filter(c -> c.getParent() == null)
                 .map(root -> buildTreeInMemory(root, childrenMap))
-                .collect(Collectors.toList());   // ← was .toList() — fixed
+                .collect(Collectors.toList());
     }
 
     // =========================================================================
     // PRIVATE HELPERS
     // =========================================================================
+
+    /** After a rename or move, update the category's products and its children. */
+    private void propagate(Category cat, int depth) {
+        if (depth > 10 || cat.getId() == null) return;
+
+        mongoTemplate.updateMulti(
+                new Query(Criteria.where("categorySlug").is(cat.getSlug())),
+                new Update().set("categoryName", cat.getName())
+                        .set("categoryLineageIds", lineageIds(cat)),
+                Product.class);
+
+        String base = (cat.getLineage() == null || cat.getLineage().isBlank()) ? "," : cat.getLineage();
+        for (Category child : categoryRepository.findAll()) {
+            if (child.getParent() != null && cat.getId().equals(child.getParent().getId())) {
+                child.setLineage(base + cat.getId() + ",");
+                categoryRepository.save(child);
+                propagate(child, depth + 1);
+            }
+        }
+    }
+
+    /** Ancestor ids from the lineage string, plus the category's own id. */
+    private List<String> lineageIds(Category cat) {
+        List<String> ids = new ArrayList<>();
+        if (cat.getLineage() != null) {
+            for (String p : cat.getLineage().split(",")) {
+                if (!p.isBlank()) ids.add(p.trim());
+            }
+        }
+        if (cat.getId() != null) ids.add(cat.getId());
+        return ids;
+    }
 
     private CategoryTreeResponse buildTreeInMemory(
             Category category,
@@ -203,7 +262,7 @@ public class CategoryService {
 
         dto.setChildren(children.stream()
                 .map(child -> buildTreeInMemory(child, childrenMap))
-                .collect(Collectors.toList()));  // ← was .toList() — fixed
+                .collect(Collectors.toList()));
 
         return dto;
     }
@@ -222,7 +281,6 @@ public class CategoryService {
         dto.setFeatured(c.isFeatured());
         dto.setDisplayOrder(c.getDisplayOrder());
         dto.setActive(c.isActive());
-        // children defaults to empty ArrayList via field initializer — safe for Redis
         return dto;
     }
 }
