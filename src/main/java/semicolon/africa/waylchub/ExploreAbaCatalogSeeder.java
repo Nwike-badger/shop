@@ -35,6 +35,9 @@ import static semicolon.africa.waylchub.config.CacheConfig.PRODUCT_DETAIL_CACHE;
  * Declarative catalog sync. Reads brands.json, categories.json and products.json
  * from exploreaba.images.path and makes the database match.
  * Upserts by slug; "delete": true removes. Fields left out of an entry are unchanged.
+ *
+ * Products: "category" is the MAIN category; "categories" (optional) lists extra
+ * ones, e.g. "category": "men-trousers", "categories": ["women-trousers", "sale"].
  */
 @Component
 @RequiredArgsConstructor
@@ -73,6 +76,7 @@ public class ExploreAbaCatalogSeeder implements CommandLineRunner {
     record VariantTweak(String colour, String size, BigDecimal price, Integer stock, Boolean active) {}
 
     record ProductEntry(String name, String slug, String renameTo, String brand, String category,
+                        List<String> categories,
                         BigDecimal price, BigDecimal discount, BigDecimal compareAtPrice,
                         String description, List<String> tags, Map<String, String> specs,
                         List<String> imageUrls, Boolean reuploadImages,
@@ -145,6 +149,8 @@ public class ExploreAbaCatalogSeeder implements CommandLineRunner {
     }
 
     // ───────────────────────── categories ─────────────────────────
+    // CategoryService.updateCategory rebuilds child lineages and re-indexes every
+    // product in the branch, so nothing extra is needed here.
 
     private void syncCategories(Path root) {
         CategoryEntry[] list = read(root.resolve("categories.json"), CategoryEntry[].class);
@@ -182,9 +188,7 @@ public class ExploreAbaCatalogSeeder implements CommandLineRunner {
                 if (c.featured() != null)     { saved.setFeatured(c.featured());         dirty = true; }
                 if (c.displayOrder() != null) { saved.setDisplayOrder(c.displayOrder()); dirty = true; }
                 if (c.active() != null)       { saved.setActive(c.active());             dirty = true; }
-                if (dirty) saved = categoryRepo.save(saved);
-
-                propagateCategory(saved, 0);
+                if (dirty) categoryRepo.save(saved);
             } catch (Exception ex) {
                 System.out.println("❌ Category " + c.slug() + ": " + ex.getMessage());
             }
@@ -194,47 +198,12 @@ public class ExploreAbaCatalogSeeder implements CommandLineRunner {
         for (CategoryEntry c : deletions) {
             try {
                 if (categoryRepo.findBySlug(c.slug()).isEmpty()) continue;
-                long used = mongoTemplate.count(
-                        new Query(Criteria.where("categorySlug").is(c.slug())), Product.class);
-                if (used > 0) {
-                    System.out.println("⚠️  Not deleted: category '" + c.slug() + "' still has "
-                            + used + " product(s). Move them first.");
-                    continue;
-                }
-                categoryService.deleteCategory(c.slug()); // refuses if it has child categories
+                categoryService.deleteCategory(c.slug()); // refuses if it has sub-categories or products
                 System.out.println("🗑️  Deleted category: " + c.slug());
             } catch (Exception ex) {
                 System.out.println("❌ Category delete " + c.slug() + ": " + ex.getMessage());
             }
         }
-    }
-
-    /** Keeps products and child categories consistent after a category is renamed or moved. */
-    private void propagateCategory(Category cat, int depth) {
-        if (depth > 10 || cat.getId() == null) return;
-        mongoTemplate.updateMulti(
-                new Query(Criteria.where("categorySlug").is(cat.getSlug())),
-                new Update().set("categoryName", cat.getName())
-                        .set("categoryLineageIds", lineageIds(cat)),
-                Product.class);
-
-        String base = (cat.getLineage() == null || cat.getLineage().isBlank()) ? "," : cat.getLineage();
-        for (Category child : categoryRepo.findAll()) {
-            if (child.getParent() != null && cat.getId().equals(child.getParent().getId())) {
-                child.setLineage(base + cat.getId() + ",");
-                categoryRepo.save(child);
-                propagateCategory(child, depth + 1);
-            }
-        }
-    }
-
-    private List<String> lineageIds(Category cat) {
-        List<String> ids = new ArrayList<>();
-        if (cat.getLineage() != null) {
-            for (String p : cat.getLineage().split(",")) if (!p.isBlank()) ids.add(p.trim());
-        }
-        if (cat.getId() != null) ids.add(cat.getId());
-        return ids;
     }
 
     // ───────────────────────── products ─────────────────────────
@@ -276,10 +245,22 @@ public class ExploreAbaCatalogSeeder implements CommandLineRunner {
             System.out.println("⚠️  Skipped (unknown brand '" + brand + "'): " + e.slug());
             return;
         }
-        if (category != null && categoryRepo.findBySlug(category).isEmpty()) {
-            System.out.println("⚠️  Skipped (unknown category '" + category + "'): " + e.slug());
-            return;
+
+        // main category first, then any extras; every one must exist
+        List<String> allCats = new ArrayList<>();
+        if (category != null) allCats.add(category);
+        if (e.categories() != null) {
+            for (String s : e.categories()) {
+                if (s != null && !s.isBlank() && !allCats.contains(s.trim())) allCats.add(s.trim());
+            }
         }
+        for (String s : allCats) {
+            if (categoryRepo.findBySlug(s).isEmpty()) {
+                System.out.println("⚠️  Skipped (unknown category '" + s + "'): " + e.slug());
+                return;
+            }
+        }
+
         BigDecimal price = pick(e.price(), originalPrice(existing));
         if (price == null) {
             System.out.println("⚠️  Skipped (no price): " + e.slug());
@@ -342,6 +323,9 @@ public class ExploreAbaCatalogSeeder implements CommandLineRunner {
         req.setDiscount(discount);
         req.setCompareAtPrice(manualCompare);
         req.setCategorySlug(category);
+        // only send the full list when "categories" is in the JSON;
+        // otherwise ProductService keeps the product's existing extra categories
+        if (e.categories() != null) req.setCategorySlugs(allCats);
         req.setBrandSlug(brand);
         req.setDescription(pick(e.description(), val(existing, Product::getDescription)));
         req.setSpecifications(pick(e.specs(), val(existing, Product::getSpecifications)));

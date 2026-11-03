@@ -36,6 +36,7 @@ public class ProductRequest {
     private List<ProductImage> images = new ArrayList<>();
 
     private String categorySlug;
+    private List<String> categorySlugs;
     private String brandSlug;
     private List<String> tags;
 }

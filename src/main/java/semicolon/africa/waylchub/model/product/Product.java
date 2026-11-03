@@ -20,16 +20,10 @@ import java.util.*;
 @AllArgsConstructor
 @Document(collection = "products")
 @CompoundIndexes({
-        // For fast sorting/filtering on standard category pages
         @CompoundIndex(name = "category_price", def = "{'categorySlug': 1, 'minPrice': 1}"),
-
-        // For fast sub-category tree expansion (Replaces the old regex lineage search)
+        // Category pages: matches the category itself AND everything under it
         @CompoundIndex(name = "lineage_ids_price", def = "{'categoryLineageIds': 1, 'minPrice': 1}"),
-
-        // For smart search brand-matching strategy
         @CompoundIndex(name = "brand_active", def = "{'brandName': 1, 'isActive': 1}")
-
-
 })
 public class Product {
 
@@ -40,39 +34,54 @@ public class Product {
     @NotBlank(message = "Slug is required")
     private String slug;
 
-
     @Indexed private String name;
     private String description;
 
+    // =====================================================================
+    // CATEGORIES — a product can be in MANY categories, related or not.
+    //
+    //   Unisex jogger: categoryIds = [menTrousersId, womenTrousersId, saleId]
+    //
+    // The FIRST entry is the PRIMARY category (breadcrumb, product card label).
+    // categorySlug / categoryName / category always mirror that primary one,
+    // so anything already reading those fields keeps working.
+    //
+    // All of these are kept in sync by ProductCategoryIndexer — never set
+    // them by hand.
+    // =====================================================================
 
+    @Indexed
+    @Builder.Default
+    private List<String> categoryIds = new ArrayList<>();     // primary first
 
-    private String categorySlug;
+    @Indexed
+    @Builder.Default
+    private List<String> categorySlugs = new ArrayList<>();   // same order as categoryIds
 
+    private String categorySlug;   // primary
+    private String categoryName;   // primary
+
+    /** Every assigned category + all their ancestors. Drives category pages. */
+    @Builder.Default
+    private List<String> categoryLineageIds = new ArrayList<>();
+
+    @DBRef
+    private Category category;     // primary
+
+    // --- BRAND ---
     private String brandSlug;
+    private String brandName;
 
-
+    @DBRef
+    private Brand brand;
 
     private String activeCampaignId;
 
-
     private BigDecimal originalBasePrice;
-
 
     @Indexed
     @Builder.Default
     private Set<String> tags = new HashSet<>();
-
-    private List<String> categoryLineageIds = new ArrayList<>();
-
-    private String categoryName;
-    private String brandName;
-
-    // --- RELATIONSHIPS ---
-    @DBRef
-    private Category category;
-
-    @DBRef
-    private Brand brand;
 
     @Min(value = 0, message = "Base price cannot be negative")
     private BigDecimal basePrice; // Represents the "From" price
@@ -85,6 +94,7 @@ public class Product {
     private Integer discount = 0;
 
     // --- CONFIGURATION ---
+    @Builder.Default
     private boolean isActive = true;
 
     @Builder.Default
@@ -97,8 +107,11 @@ public class Product {
     private List<ProductImage> images = new ArrayList<>();
 
     // --- ANALYTICS ---
+    @Builder.Default
     private Long soldCount = 0L;
+    @Builder.Default
     private Double averageRating = 0.0;
+    @Builder.Default
     private Integer reviewCount = 0;
 
     @CreatedDate

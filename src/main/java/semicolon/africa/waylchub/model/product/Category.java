@@ -7,20 +7,37 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.DBRef;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+/**
+ * A node in the category tree, e.g.
+ *
+ *   Men                (slug: men)
+ *    ├─ Shirts         (slug: men-shirts)
+ *    └─ Trousers       (slug: men-trousers)
+ *   Women              (slug: women)
+ *    ├─ Shirts         (slug: women-shirts)
+ *    └─ Trousers       (slug: women-trousers)
+ *
+ * CHANGE: `name` is no longer globally unique. Two categories can both be
+ * called "Shirts" as long as they have different parents (checked in
+ * CategoryService). The SLUG is still unique — it's what URLs and products use.
+ *
+ * Do NOT put @Indexed back on `name`: the old unique index is dropped at
+ * startup by CategoryMigration, and re-adding any index named "name" with
+ * different options would clash with it.
+ */
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@ToString(exclude = "parent")          // ← replaces @ToString.Exclude on the field
-@EqualsAndHashCode(exclude = "parent") // ← replaces @EqualsAndHashCode.Exclude on the field
+@ToString(exclude = "parent")
+@EqualsAndHashCode(exclude = "parent")
 @Document(collection = "categories")
 public class Category {
 
     @Id
     private String id;
 
-    @Indexed(unique = true)
     private String name;
 
     @Indexed(unique = true)
@@ -30,23 +47,20 @@ public class Category {
     private String imageUrl;
 
     /**
-     * @JsonIgnore — prevents Jackson from traversing the self-referential
-     * parent link when serializing to Redis.  Without this, Jackson follows
-     * parent → parent.parent → … until it either hits a circular-reference
-     * error or tries to serialize a MongoDB proxy and throws a 400.
-     *
-     * The tree is rebuilt in-memory in CategoryService.getCategoryTree()
-     * using a childrenMap, so this field is only needed during that
-     * in-process traversal — it never needs to be in the Redis JSON.
+     * @JsonIgnore — stops Jackson walking parent → parent.parent → … when
+     * serialising to Redis. The tree is rebuilt in memory in CategoryService.
      */
     @DBRef
     @JsonIgnore
     private Category parent;
 
+    /** Ancestor ids, comma-wrapped: ",rootId,childId," ("," for a root). */
     @Indexed
     private String lineage;
 
+    @Builder.Default
     private boolean isFeatured = false;
     private Integer displayOrder;
+    @Builder.Default
     private boolean isActive = true;
 }

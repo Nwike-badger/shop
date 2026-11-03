@@ -38,6 +38,7 @@ public class ProductService {
     private final ProductVariantRepository variantRepository;
     private final CategoryRepository categoryRepository;
     private final BrandRepository brandRepository;
+    private final ProductCategoryIndexer categoryIndexer;
     private final MongoTemplate mongoTemplate;
     private final CampaignService campaignService;
     private final ApplicationEventPublisher eventPublisher;
@@ -109,7 +110,9 @@ public class ProductService {
             query.addCriteria(TextCriteria.forDefaultLanguage().matching(filter.getKeyword()));
         }
 
-        if (filter.getCategorySlug() != null) {
+        // Matches products in this category, in any sub-category of it, and
+        // products that are ALSO in it as one of their several categories.
+        if (filter.getCategorySlug() != null && !filter.getCategorySlug().isBlank()) {
             Category category = categoryRepository.findBySlug(filter.getCategorySlug())
                     .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
             query.addCriteria(Criteria.where("categoryLineageIds").in(category.getId()));
@@ -127,7 +130,7 @@ public class ProductService {
         query.addCriteria(Criteria.where("isActive").is(true));
 
         query.fields().include(
-                "name", "slug", "brandName", "categoryName", "categorySlug",
+                "name", "slug", "brandName", "categoryName", "categorySlug", "categorySlugs",
                 "minPrice", "maxPrice", "basePrice", "totalStock", "discount",
                 "compareAtPrice", "averageRating", "reviewCount", "images", "isActive"
         );
@@ -207,13 +210,23 @@ public class ProductService {
             product.setDiscount(0);
         }
 
-        if (request.getCategorySlug() != null) {
-            Category cat = categoryRepository.findBySlug(request.getCategorySlug())
-                    .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
-            product.setCategory(cat);
-            product.setCategoryName(cat.getName());
-            product.setCategorySlug(cat.getSlug());
-            product.setCategoryLineageIds(extractLineageIds(cat));
+        // ── Categories ──────────────────────────────────────────────────────
+        // categorySlug  = main category (breadcrumb / card label)
+        // categorySlugs = every category the product is in, e.g.
+        //                 ["men-trousers", "women-trousers", "sale"]
+        // If only categorySlug is sent (older admin form, seeder), it REPLACES the
+        // old main category; the product's other categories are kept.
+        if (request.getCategorySlug() != null || request.getCategorySlugs() != null) {
+            Collection<String> all;
+            if (request.getCategorySlugs() != null) {
+                all = request.getCategorySlugs();
+            } else {
+                List<String> keep = new ArrayList<>(
+                        product.getCategorySlugs() != null ? product.getCategorySlugs() : List.of());
+                if (product.getCategorySlug() != null) keep.remove(product.getCategorySlug());
+                all = keep;
+            }
+            categoryIndexer.apply(product, categoryIndexer.resolve(request.getCategorySlug(), all));
         }
 
         if (request.getBrandSlug() != null) {
@@ -451,21 +464,8 @@ public class ProductService {
     // =========================================================================
 
     /**
-     * Evicts all three PRODUCT_DETAIL_CACHE keys for a given product.
-     *
-     * All three keys must always be evicted together. Evicting only a subset
-     * causes a split-brain: users reaching the product via different access
-     * patterns (bare id, byId_ prefix, or slug_) see different data.
-     *
-     * slug_ eviction is null-guarded: a product with no slug (bad record from a
-     * migration or partial save) would otherwise evict the literal key "slug_null",
-     * which is a nonsensical entry that pollutes cache monitoring.
-     *
-     * Two overloads:
-     *   evictProductCaches(Product)  — use when the entity is already in memory;
-     *                                  avoids a redundant DB read.
-     *   evictProductCaches(String)   — use when only the productId is available;
-     *                                  fetches the product to obtain the slug.
+     * Evicts all three PRODUCT_DETAIL_CACHE keys for a given product
+     * (bare id, byId_ prefix, slug_ prefix). They must always be evicted together.
      */
     private void evictProductCaches(Product product) {
         try {
@@ -517,17 +517,5 @@ public class ProductService {
                                 "' for option '" + entry.getKey() + "'");
             }
         }
-    }
-
-    private List<String> extractLineageIds(Category cat) {
-        List<String> ids = new ArrayList<>();
-        if (cat.getLineage() != null && !cat.getLineage().isBlank()) {
-            String[] parts = cat.getLineage().split(",");
-            for (String part : parts) {
-                if (!part.isBlank()) ids.add(part.trim());
-            }
-        }
-        if (cat.getId() != null) ids.add(cat.getId());
-        return ids;
     }
 }
