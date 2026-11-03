@@ -1,6 +1,7 @@
 package semicolon.africa.waylchub.service.productService;
 
 import lombok.RequiredArgsConstructor;
+import java.util.function.Function;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
@@ -312,6 +313,148 @@ public class ProductService {
 
         return saved;
     }
+
+
+    /**
+     * Saves ALL of a product's variants in one call (admin editor).
+     *
+     *  - Loads the product and its existing variants once.
+     *  - Validates everything first; if anything is wrong, nothing is written.
+     *  - New variants: one batch insert. Existing variants: saved only if changed.
+     *  - Totals (min/max price, total stock) and caches are updated once at the end.
+     *
+     * Variants left out of the list are NOT deleted (same as before).
+     */
+    @CacheEvict(value = PRODUCTS_LIST_CACHE, allEntries = true)
+    public List<ProductVariant> saveVariantsBulk(String productId, List<VariantRequest> requests) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        if (requests == null || requests.isEmpty()) return new ArrayList<>();
+
+        List<ProductVariant> existing = variantRepository.findByProductId(productId);
+        Map<String, ProductVariant> existingById = existing.stream()
+                .collect(Collectors.toMap(ProductVariant::getId, Function.identity()));
+
+        // ── 1. Validate everything before writing anything ──────────────────
+        Set<Map<String, String>> seenAttrs = new HashSet<>();
+        Set<String> seenSkus = new HashSet<>();
+        Set<String> requestIds = new HashSet<>();
+
+        for (VariantRequest r : requests) {
+            if (r.getProductId() != null && !r.getProductId().equals(productId)) {
+                throw new IllegalArgumentException("Variant belongs to a different product.");
+            }
+            if (r.getSku() == null || r.getSku().isBlank()) {
+                throw new IllegalArgumentException("Every variant needs a SKU.");
+            }
+            Map<String, String> attrs = r.getAttributes() != null ? r.getAttributes() : new HashMap<>();
+            validateVariantAttributes(product, attrs);
+
+            if (!seenAttrs.add(attrs)) {
+                throw new IllegalArgumentException("Two variants have the same options: " + attrs);
+            }
+            if (!seenSkus.add(r.getSku().trim())) {
+                throw new IllegalArgumentException("SKU used twice: " + r.getSku().trim());
+            }
+            if (r.getId() != null) {
+                if (!existingById.containsKey(r.getId())) {
+                    throw new ResourceNotFoundException("Variant not found on this product: " + r.getId());
+                }
+                requestIds.add(r.getId());
+            }
+        }
+
+        // options must not clash with a variant that isn't in this request
+        for (ProductVariant v : existing) {
+            if (!requestIds.contains(v.getId()) && seenAttrs.contains(v.getAttributes())) {
+                throw new IllegalArgumentException(
+                        "A variant with these exact options already exists: " + v.getAttributes());
+            }
+        }
+
+        // SKU must not be used by any other variant (any product) — one query
+        Query skuQuery = new Query(Criteria.where("sku").in(seenSkus));
+        if (!requestIds.isEmpty()) skuQuery.addCriteria(Criteria.where("id").nin(requestIds));
+        skuQuery.fields().include("sku");
+        List<ProductVariant> skuClashes = mongoTemplate.find(skuQuery, ProductVariant.class);
+        if (!skuClashes.isEmpty()) {
+            throw new IllegalArgumentException("SKU already in use: " +
+                    skuClashes.stream().map(ProductVariant::getSku).collect(Collectors.joining(", ")));
+        }
+
+        // ── 2. Build the changes ─────────────────────────────────────────────
+        List<ProductVariant> toInsert = new ArrayList<>();
+        List<ProductVariant> toUpdate = new ArrayList<>();
+        List<ProductVariant> result = new ArrayList<>();
+        Map<ProductVariant, Integer> stockChange = new IdentityHashMap<>();
+
+        for (VariantRequest r : requests) {
+            boolean isNew = r.getId() == null;
+            ProductVariant v = isNew ? new ProductVariant() : existingById.get(r.getId());
+            Map<String, String> attrs = r.getAttributes() != null ? r.getAttributes() : new HashMap<>();
+            int oldStock = v.getStockQuantity() != null ? v.getStockQuantity() : 0;
+            int newStock = r.getStockQuantity() != null ? r.getStockQuantity() : 0;
+
+            if (!isNew && isUnchanged(v, r, attrs)) {
+                result.add(v);
+                continue;
+            }
+
+            v.setProductId(productId);
+            v.setSku(r.getSku().trim());
+            v.setPrice(r.getPrice());
+            v.setCompareAtPrice(r.getCompareAtPrice());
+            v.setStockQuantity(r.getStockQuantity());
+            v.setAttributes(attrs);
+            v.setImages(r.getImages());
+            v.setManageStock(true);
+            if (r.getIsActive() != null) v.setActive(r.getIsActive());
+
+            if (isNew && product.getActiveCampaignId() != null) {
+                campaignService.applyActiveCampaignToNewVariant(v, product.getActiveCampaignId());
+            }
+
+            (isNew ? toInsert : toUpdate).add(v);
+            result.add(v);
+            if (newStock != oldStock) stockChange.put(v, newStock - oldStock);
+        }
+
+        // ── 3. Write: one batch insert, individual saves only for changed ones ──
+        if (!toInsert.isEmpty()) {
+            Collection<ProductVariant> inserted = mongoTemplate.insert(toInsert, ProductVariant.class);
+            // insert() fills in the generated ids on the same objects
+        }
+        if (!toUpdate.isEmpty()) {
+            variantRepository.saveAll(toUpdate);
+        }
+
+        // ── 4. Totals, caches, stock events — once ──────────────────────────
+        evictProductCaches(product);
+        updateParentAggregates(productId);
+        stockChange.forEach((v, delta) ->
+                eventPublisher.publishEvent(new StockChangedEvent(productId, v.getId(), delta)));
+
+        log.info("[Variants] Bulk save for {}: {} new, {} updated, {} unchanged",
+                product.getSlug(), toInsert.size(), toUpdate.size(),
+                requests.size() - toInsert.size() - toUpdate.size());
+        return result;
+    }
+
+    private static boolean isUnchanged(ProductVariant v, VariantRequest r, Map<String, String> attrs) {
+        return Objects.equals(v.getSku(), r.getSku().trim())
+                && sameAmount(v.getPrice(), r.getPrice())
+                && sameAmount(v.getCompareAtPrice(), r.getCompareAtPrice())
+                && Objects.equals(v.getStockQuantity(), r.getStockQuantity())
+                && Objects.equals(v.getAttributes(), attrs)
+                && Objects.equals(v.getImages(), r.getImages())
+                && (r.getIsActive() == null || r.getIsActive() == v.isActive());
+    }
+
+    private static boolean sameAmount(BigDecimal a, BigDecimal b) {
+        if (a == null || b == null) return a == b;
+        return a.compareTo(b) == 0;
+    }
+
 
     @Transactional
     @CacheEvict(value = PRODUCTS_LIST_CACHE, allEntries = true)

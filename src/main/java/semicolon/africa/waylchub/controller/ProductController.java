@@ -105,6 +105,14 @@ public class ProductController {
         return ResponseEntity.ok(productPage.map(this::mapToResponse));
     }
 
+    @PostMapping("/{productId}/variants/bulk")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    public ResponseEntity<List<ProductVariant>> saveVariantsBulk(
+            @PathVariable String productId,
+            @RequestBody List<VariantRequest> variants) {
+        return ResponseEntity.ok(productService.saveVariantsBulk(productId, variants));
+    }
+
     @GetMapping("/category/{slug}")
     public ResponseEntity<Page<ProductResponse>> getByCategory(
             @PathVariable String slug,
